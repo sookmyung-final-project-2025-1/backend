@@ -27,7 +27,7 @@ jobs:
         with:
           host: ${{ secrets.RASPBERRY_PI_HOST }}
           username: ${{ secrets.RASPBERRY_PI_USER }}
-          key: ${{ secrets.RASPBERRY_PI_SSH_KEY }}
+          password: ${{ secrets.RASPBERRY_PI_PASSWORD }}
           source: "fraud-detection-app.tar,docker-compose.yml,.env.example"
           target: "/home/${{ secrets.RASPBERRY_PI_USER }}/fraud-detection"
 
@@ -36,7 +36,7 @@ jobs:
         with:
           host: ${{ secrets.RASPBERRY_PI_HOST }}
           username: ${{ secrets.RASPBERRY_PI_USER }}
-          key: ${{ secrets.RASPBERRY_PI_SSH_KEY }}
+          password: ${{ secrets.RASPBERRY_PI_PASSWORD }}
           script: |
             cd /home/${{ secrets.RASPBERRY_PI_USER }}/fraud-detection
             
