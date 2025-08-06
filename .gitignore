@@ -74,3 +74,5 @@ Thumbs.db
 ### 테스트 관련 ###
 /test-results/
 /coverage/
+# SSL certificates (auto-generated)
+nginx/ssl/*.pem
