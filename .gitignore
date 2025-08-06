@@ -36,4 +36,41 @@ out/
 ### VS Code ###
 .vscode/
 
+### 환경 변수 파일 ###
 .env
+.env.local
+.env.production
+.env.development
+
+### 로그 파일 ###
+*.log
+logs/
+
+### 데이터베이스 파일 ###
+*.db
+*.sqlite
+
+### Docker 관련 ###
+.dockerignore
+
+### 임시 파일 ###
+*.tmp
+*.temp
+*~
+
+### 배포 관련 ###
+fraud-detection-app.tar
+*.tar
+*.tar.gz
+
+### 백업 파일 ###
+*.bak
+*.backup
+
+### OS 관련 ###
+.DS_Store
+Thumbs.db
+
+### 테스트 관련 ###
+/test-results/
+/coverage/
