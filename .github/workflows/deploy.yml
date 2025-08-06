@@ -72,7 +72,7 @@ jobs:
           host: ${{ secrets.RASPBERRY_PI_HOST }}
           username: ${{ secrets.RASPBERRY_PI_USER }}
           key: ${{ secrets.RASPBERRY_PI_SSH_KEY }}
-          source: "fraud-detection-app.tar,docker-compose.yml,.env.example"
+          source: "fraud-detection-app.tar,docker-compose.yml,.env.example,nginx/,setup-ssl.sh"
           target: "/home/${{ secrets.RASPBERRY_PI_USER }}/fraud-detection"
 
       - name: Deploy to Raspberry Pi
@@ -87,7 +87,13 @@ jobs:
             # Docker 이미지 로드
             docker load < fraud-detection-app.tar
             
-            # 환경 변수 파일 설정 (사전에 서버에 .env 파일이 있어야 함)
+            # SSL 인증서 생성 (없는 경우만)
+            if [ ! -f nginx/ssl/cert.pem ]; then
+              chmod +x setup-ssl.sh
+              ./setup-ssl.sh
+            fi
+            
+            # 환경 변수 파일 설정
             if [ ! -f .env ]; then
               echo "Warning: .env file not found. Using example file."
               cp .env.example .env
@@ -105,5 +111,5 @@ jobs:
             # 컨테이너 상태 확인
             docker-compose ps
             
-            # 로그 확인 (최근 20줄)
+            # 로그 확인
             docker-compose logs --tail=20 app
