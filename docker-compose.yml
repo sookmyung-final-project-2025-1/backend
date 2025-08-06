@@ -1,0 +1,66 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: fraud-detection-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-rootpassword123}
+      MYSQL_DATABASE: fraud_detection
+      MYSQL_USER: ${DB_USERNAME:-fraud_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-rootpassword123}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - fraud-detection-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USERNAME:-fraud_user}", "-p${DB_PASSWORD:-rootpassword123}"]
+      timeout: 20s
+      retries: 10
+      interval: 10s
+      start_period: 30s
+
+  app:
+    build: .
+    container_name: fraud-detection-app
+    env_file:
+      - .env
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/fraud_detection?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true
+      DB_USERNAME: ${DB_USERNAME:-fraud_user}
+      DB_PASSWORD: ${DB_PASSWORD:-rootpassword123}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DOCKER_ENV: true
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - fraud-detection-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: fraud-detection-redis
+    volumes:
+      - redis_data:/data
+    networks:
+      - fraud-detection-network
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:
+
+networks:
+  fraud-detection-network:
+    driver: bridge
