@@ -1,0 +1,99 @@
+jwt:
+  secret: ${JWT_SECRET_KEY}
+  access-token-validity-in-seconds: 3600  # 1시간
+  refresh-token-validity-in-seconds: 604800  # 7일
+
+spring:
+  application:
+    name: fraud-detection-server
+
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/fraud_detection}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
+
+  # Redis 설정
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 0
+
+  # 이메일 설정
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          ssl:
+            trust: smtp.gmail.com
+
+# 서버 설정
+server:
+  port: 8080
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+# Actuator 설정
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+#      show-details: when-authorized
+
+# 로깅 설정
+logging:
+  level:
+    com.credit.card.fraud.detection: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.mail: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"
+
+# 이메일 인증 설정
+app:
+  email:
+    verification:
+      expiration: 300 # 5분 (초 단위)
+      template:
+        subject: "[신용카드 사기탐지 서비스] 이메일 인증 코드"
+        content: |
+          안녕하세요.
+          
+          신용카드 사기탐지 서비스 회원가입을 위한 인증 코드입니다.
+          
+          인증 코드: %s
+          
+          이 코드는 5분간 유효합니다.
+          
+          감사합니다.
