@@ -7,49 +7,6 @@ on:
     branches: [ main ]
 
 jobs:
-#  test:
-#    runs-on: ubuntu-latest
-#
-#    services:
-#      mysql:
-#        image: mysql:8.0
-#        env:
-#          MYSQL_ROOT_PASSWORD: test
-#          MYSQL_DATABASE: fraud_detection_test
-#        ports:
-#          - 3306:3306
-#        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
-#
-#    steps:
-#      - uses: actions/checkout@v4
-#
-#      - name: Set up JDK 17
-#        uses: actions/setup-java@v4
-#        with:
-#          java-version: '17'
-#          distribution: 'temurin'
-#
-#      - name: Cache Gradle dependencies
-#        uses: actions/cache@v3
-#        with:
-#          path: |
-#            ~/.gradle/caches
-#            ~/.gradle/wrapper
-#          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-#          restore-keys: |
-#            ${{ runner.os }}-gradle-
-#
-#      - name: Grant execute permission for gradlew
-#        run: chmod +x gradlew
-#
-#      - name: Run tests
-#        run: ./gradlew test
-#        env:
-#          DB_URL: jdbc:mysql://localhost:3306/fraud_detection_test
-#          DB_USERNAME: root
-#          DB_PASSWORD: test
-#          JWT_SECRET_KEY: test-secret-key-for-github-actions-testing-only
-
   build-and-deploy:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
@@ -66,16 +23,16 @@ jobs:
           docker save fraud-detection-app:latest > fraud-detection-app.tar
 
       - name: Copy files to Raspberry Pi
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.RASPBERRY_PI_HOST }}
           username: ${{ secrets.RASPBERRY_PI_USER }}
           key: ${{ secrets.RASPBERRY_PI_SSH_KEY }}
-          source: "fraud-detection-app.tar,docker-compose.yml,.env.example,nginx/,setup-ssl.sh"
+          source: "fraud-detection-app.tar,docker-compose.yml,.env.example"
           target: "/home/${{ secrets.RASPBERRY_PI_USER }}/fraud-detection"
 
       - name: Deploy to Raspberry Pi
-        uses: appleboy/ssh-action@v0.1.11
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.RASPBERRY_PI_HOST }}
           username: ${{ secrets.RASPBERRY_PI_USER }}
@@ -83,32 +40,15 @@ jobs:
           script: |
             cd /home/${{ secrets.RASPBERRY_PI_USER }}/fraud-detection
             
-            # Docker 이미지 로드
             docker load < fraud-detection-app.tar
             
-            # SSL 인증서 생성 (없는 경우만)
-            if [ ! -f nginx/ssl/cert.pem ]; then
-              chmod +x setup-ssl.sh
-              ./setup-ssl.sh
-            fi
-            
-            # 환경 변수 파일 설정
             if [ ! -f .env ]; then
               echo "Warning: .env file not found. Using example file."
               cp .env.example .env
             fi
             
-            # 기존 컨테이너 중지 및 제거
             docker-compose down || true
-            
-            # 새 컨테이너 시작
             docker-compose up -d
-            
-            # 사용하지 않는 이미지 정리
             docker image prune -f
-            
-            # 컨테이너 상태 확인
             docker-compose ps
-            
-            # 로그 확인
             docker-compose logs --tail=20 app
