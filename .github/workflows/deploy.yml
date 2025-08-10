@@ -19,31 +19,40 @@ jobs:
         working-directory: ./backend
         run: |
           echo "=== 배포 시작 ==="
-          
+
+          # Gradle 캐시 정리 (추가)
+          rm -rf .gradle/ build/ || true
+
           # 환경 변수 파일 확인
           if [ ! -f .env ]; then
             echo "Creating .env file from example"
             cp .env.example .env
           fi
-          
-          # Docker 이미지 빌드
-          docker build --no-cache -t fraud-detection-app:latest .
-          
-          # 시스템 nginx 중지 (포트 충돌 방지)
+
+          # 기존 이미지 강제 삭제 (추가)
+          sudo docker rmi fraud-detection-app:latest || true
+
+          # Docker 빌드 캐시 정리 (추가)
+          sudo docker builder prune -f || true
+
+          # Docker 이미지 빌드 (--pull 추가)
+          docker build --no-cache --pull -t fraud-detection-app:latest .
+
+          # 시스템 nginx 중지
           sudo systemctl stop nginx || true
-          
+
           # 기존 컨테이너 정리
           sudo docker compose down || true
-          
+
           # 새 컨테이너 시작
           sudo docker compose up -d --force-recreate
-          
+
           # 컨테이너 시작 대기
           sleep 15
-          
+
           # 정리
           docker image prune -f || true
-          
+
           # 상태 확인
           sudo docker compose ps
           echo "=== 배포 완료 ==="
