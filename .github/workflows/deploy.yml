@@ -13,36 +13,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-#      - name: Set up Docker Buildx
-#        uses: docker/setup-buildx-action@v3
-#
-#      - name: Build Docker image
-#        run: |
-#          docker build -t fraud-detection-app:latest .
-#          docker save fraud-detection-app:latest > fraud-detection-app.tar
-
-#      - name: Copy files to Raspberry Pi
-#        uses: appleboy/scp-action@master
-#        with:
-#          host: ${{ secrets.RASPBERRY_PI_HOST }}
-#          username: ${{ secrets.RASPBERRY_PI_USER }}
-#          password: ${{ secrets.RASPBERRY_PI_PASSWORD }}
-#          source: "fraud-detection-app.tar,docker-compose.yml,.env.example"
-#          target: "/home/${{ secrets.RASPBERRY_PI_USER }}/fraud-detection"
-#
-#      - name: Deploy to Raspberry Pi
-#        uses: appleboy/ssh-action@master
-#        with:
-#          host: ${{ secrets.RASPBERRY_PI_HOST }}
-#          username: ${{ secrets.RASPBERRY_PI_USER }}
-#          password: ${{ secrets.RASPBERRY_PI_PASSWORD }}
-#          script: |
-#            cd /home/${{ secrets.RASPBERRY_PI_USER }}/fraud-detection
-#
-#            docker load < fraud-detection-app.tar
-
+        with:
+          path: backend
       - name: Build and Deploy
+        working-directory: ./backend
         run: |
           echo "=== 배포 시작 ==="
           
@@ -53,7 +27,7 @@ jobs:
           fi
           
           # Docker 이미지 빌드
-          docker build -t fraud-detection-app:latest .
+          docker build --no-cache -t fraud-detection-app:latest .
           
           # 시스템 nginx 중지 (포트 충돌 방지)
           sudo systemctl stop nginx || true
@@ -62,7 +36,7 @@ jobs:
           sudo docker compose down || true
           
           # 새 컨테이너 시작
-          sudo docker compose up -d
+          sudo docker compose up -d --force-recreate
           
           # 컨테이너 시작 대기
           sleep 15
