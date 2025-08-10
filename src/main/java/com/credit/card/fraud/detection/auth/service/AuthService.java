@@ -30,7 +30,6 @@ public class AuthService {
     public EmailVerificationResponse sendVerificationCode(EmailVerificationRequest request) {
         String email = request.getEmail();
 
-        // 이미 가입된 이메일인지 확인
         if (companyRepository.existsByEmail(email)) {
             return EmailVerificationResponse.failure("이미 가입된 이메일입니다.");
         }
@@ -55,7 +54,7 @@ public class AuthService {
         boolean isValid = emailService.verifyCode(request.getEmail(), request.getCode());
 
         if (isValid) {
-            return EmailVerificationResponse.success("이메일 인증이 완료되었습니다.", 0);
+            return EmailVerificationResponse.success("이메일 인증이 완료되었습니다. 이제 회원가입을 진행하세요.", 0);
         } else {
             return EmailVerificationResponse.failure("인증 코드가 올바르지 않거나 만료되었습니다.");
         }
@@ -73,14 +72,8 @@ public class AuthService {
             throw new RuntimeException("이미 가입된 이메일입니다.");
         }
 
-        // 이메일 인증 여부 확인
         if (!emailService.isEmailVerified(email)) {
-            throw new RuntimeException("이메일 인증이 완료되지 않았습니다.");
-        }
-
-        // 인증 코드 재검증
-        if (!emailService.verifyCode(email, request.getEmailVerificationCode())) {
-            throw new RuntimeException("인증 코드가 올바르지 않거나 만료되었습니다.");
+            throw new RuntimeException("이메일 인증이 완료되지 않았습니다. 먼저 이메일 인증을 완료해주세요.");
         }
 
         try {
@@ -96,10 +89,8 @@ public class AuthService {
 
             companyRepository.save(company);
 
-            // 이메일 인증 상태 정리
             emailService.clearEmailVerification(email);
 
-            // JWT 토큰 생성
             String token = jwtService.generateToken(email);
 
             log.info("회원가입 완료: {}", email);
