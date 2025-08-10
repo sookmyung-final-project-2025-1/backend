@@ -40,7 +40,7 @@ services:
     env_file:
       - .env
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/fraud_detection?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true
+      DB_URL: jdbc:mysql://mysql:3306/fraud_detection?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10
       DB_USERNAME: ${DB_USERNAME:-fraud_user}
       DB_PASSWORD: ${DB_PASSWORD:-rootpassword123}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
@@ -48,6 +48,7 @@ services:
       MAIL_PASSWORD: ${MAIL_PASSWORD}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-production}
       DOCKER_ENV: true
     expose:
       - "8080"
@@ -59,6 +60,22 @@ services:
     networks:
       - fraud-detection-network
     restart: unless-stopped
+    # 헬스체크 추가
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # 리소스 제한 (운영 환경 고려)
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
 
   # nginx 리버스 프록시
   nginx:
