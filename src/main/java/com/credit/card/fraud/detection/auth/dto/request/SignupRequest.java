@@ -32,8 +32,4 @@ public class SignupRequest {
 
     @NotNull(message = "업종은 필수입니다.")
     private Industry industry;
-
-    @NotBlank(message = "이메일 인증 코드는 필수입니다.")
-    @Pattern(regexp = "^[0-9]{6}$", message = "인증 코드는 6자리 숫자여야 합니다.")
-    private String emailVerificationCode;
 }

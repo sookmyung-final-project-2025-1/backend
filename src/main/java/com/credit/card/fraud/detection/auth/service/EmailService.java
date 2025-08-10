@@ -82,12 +82,11 @@ public class EmailService {
                 return false;
             }
 
-            // 인증 성공 시 인증 코드 삭제하고 인증 완료 상태 저장
             redisTemplate.delete(key);
             String verifiedKey = EMAIL_VERIFIED_PREFIX + email;
-            redisTemplate.opsForValue().set(verifiedKey, "true", 30, TimeUnit.MINUTES); // 30분간 인증 상태 유지
+            redisTemplate.opsForValue().set(verifiedKey, "true", 60, TimeUnit.MINUTES);
 
-            log.info("이메일 인증 성공: {}", email);
+            log.info("이메일 인증 성공: {} (1시간 동안 유효)", email);
             return true;
 
         } catch (Exception e) {
@@ -124,6 +123,15 @@ public class EmailService {
     }
 
     /**
+     * 인증 상태 남은 유효시간 조회 (분 단위)
+     */
+    public int getVerificationRemainingMinutes(String email) {
+        String verifiedKey = EMAIL_VERIFIED_PREFIX + email;
+        Long expire = redisTemplate.getExpire(verifiedKey, TimeUnit.MINUTES);
+        return expire != null ? expire.intValue() : 0;
+    }
+
+    /**
      * 6자리 인증 코드 생성
      */
     private String generateVerificationCode() {
@@ -131,7 +139,7 @@ public class EmailService {
     }
 
     /**
-     * 남은 만료 시간 조회 (초 단위)
+     * 남은 만료 시간 조회 (초 단위) - 인증 코드용
      */
     public int getExpirationSeconds(String email) {
         String key = EMAIL_VERIFICATION_PREFIX + email;
