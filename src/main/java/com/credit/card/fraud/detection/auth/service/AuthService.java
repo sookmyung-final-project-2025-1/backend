@@ -30,19 +30,28 @@ public class AuthService {
     public EmailVerificationResponse sendVerificationCode(EmailVerificationRequest request) {
         String email = request.getEmail();
 
+        log.info("=== 이메일 발송 시작: {} ===", email);
+
         if (companyRepository.existsByEmail(email)) {
             return EmailVerificationResponse.failure("이미 가입된 이메일입니다.");
         }
 
         try {
+            log.info("EmailService.sendVerificationCode 호출 전");
             emailService.sendVerificationCode(email);
+            log.info("EmailService.sendVerificationCode 호출 후");
+
             int expirationSeconds = emailService.getExpirationSeconds(email);
             return EmailVerificationResponse.success(
                     "인증 코드가 발송되었습니다.",
                     expirationSeconds
             );
         } catch (Exception e) {
-            log.error("이메일 인증 코드 발송 실패: {}", email, e);
+            log.error("=== 이메일 인증 코드 발송 실패 ===");
+            log.error("Email: {}", email);
+            log.error("Error message: {}", e.getMessage());
+            log.error("Error class: {}", e.getClass().getName());
+            log.error("Full stack trace: ", e);
             return EmailVerificationResponse.failure("이메일 발송에 실패했습니다.");
         }
     }
