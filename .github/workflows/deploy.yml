@@ -20,20 +20,19 @@ jobs:
         working-directory: ./backend
         run: |
           echo "=== 배포 시작 ==="
-          
-          # 환경 변수 확인
+
+          # 배포 대상 환경
           ENVIRONMENT=${DEPLOYMENT_ENV:-prod}
           echo "배포 환경: $ENVIRONMENT"
-          
-          # Gradle 캐시 정리
+
+          # Gradle 빌드 준비 & JAR 생성
           rm -rf .gradle/ build/ || true
-          
           sudo apt-get update
           sudo apt-get install -y openjdk-17-jdk-headless
           chmod +x ./gradlew
           ./gradlew bootJar -x test --no-daemon
-          
-          # Github Secrets
+
+          # === Secrets -> .env.prod 생성
           cat > .env.prod <<'EOF'
           JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
           DB_URL=${{ secrets.DB_URL }}
@@ -53,68 +52,72 @@ jobs:
           JPA_SHOW_SQL=false
           ACTUATOR_HEALTH_DETAILS=when-authorized
           EOF
-          
           echo 'APP_IMAGE=fraud-detection-app:latest' >> .env.prod
-          cp .env.prod .env
-          
-          # 기존 이미지 강제 삭제
+          cp .env.prod .env   # compose 변수 치환용 표준 .env
+
+          # 기존 이미지/캐시 정리 후 새 이미지 빌드
           sudo docker rmi fraud-detection-app:latest || true
-          
-          # Docker 빌드 캐시 정리
           sudo docker builder prune -f || true
-          
-          # Docker 이미지 빌드
           docker build --no-cache --pull -t fraud-detection-app:latest .
-          
-          # 시스템 nginx 중지
+
+          # 호스트 nginx 중지(포트 충돌 방지)
           sudo systemctl stop nginx || true
-          
-          # 기존 컨테이너 정리
+
+          # 기존 스택 내리기(동일 -f 조합)
           sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml down || true
-          
-          # 개발 환경에서만 볼륨 삭제 (운영 환경에서는 데이터 보존)
-          if [ "$ENVIRONMENT" = "development" ]; then
-            echo "개발 환경: MySQL 볼륨 초기화"
-            sudo docker volume rm backend_mysql_data || true
-          else
-            echo "운영 환경: MySQL 데이터 보존"
-          fi
-          
-          # DB 사용자 권한 체크 및 수정 스크립트 실행
+
+          # DB 권한 스크립트가 있을 때만 실행
           echo "=== DB 권한 체크 및 수정 ==="
-          ./scripts/check-and-fix-db-permissions.sh || true
-          
-          if [ ! -f nginx/ssl/cert.pem ] || [ ! -f nginx/ssl/key.pem ]; then
-          echo "Generating self-signed cert (prod without real cert)"
-          mkdir -p nginx/ssl
-          openssl req -x509 -newkey rsa:2048 -nodes \
-            -keyout nginx/ssl/key.pem -out nginx/ssl/cert.pem \
-            -days 365 -subj "/CN=$(hostname -f || echo localhost)"
+          if [ -x ./scripts/check-and-fix-db-permissions.sh ]; then
+            ./scripts/check-and-fix-db-permissions.sh || true
+          else
+            echo "skip: ./scripts/check-and-fix-db-permissions.sh not found"
           fi
-          
+
+          # prod에서 인증서 없으면 자가서명 생성
+          if [ ! -f nginx/ssl/cert.pem ] || [ ! -f nginx/ssl/key.pem ]; then
+            echo "Generating self-signed cert (prod without real cert)"
+            mkdir -p nginx/ssl
+            openssl req -x509 -newkey rsa:2048 -nodes \
+              -keyout nginx/ssl/key.pem -out nginx/ssl/cert.pem \
+              -days 365 -subj "/CN=$(hostname -f || echo localhost)"
+          fi
+
           # 새 컨테이너 시작
           sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml \
             up -d --force-recreate
-  
+
+          # 앱 헬스 체크 (최대 60초 대기, 실패 시에만 로그 덤프)
           echo "=== 앱 헬스 체크 ==="
+          ok=false
           for i in {1..12}; do
-          if ! curl -fsSLk http://localhost/actuator/health >/dev/null 2>&1; then
-            echo "=== nginx logs ===";  sudo docker logs $(sudo docker compose ps -q nginx) --tail=200 || true
-            echo "=== app logs ===";    sudo docker logs $(sudo docker compose ps -q app) --tail=200 || true
-            exit 1
-          fi
+            if curl -fsSLk http://localhost/actuator/health >/dev/null 2>&1; then
+              echo "앱이 정상적으로 시작되었습니다"
+              ok=true
+              break
+            fi
             echo "앱 시작 대기 중... ($i/12)"
             sleep 5
           done
-          
+          if [ "$ok" != "true" ]; then
+            echo "=== docker compose ps ==="
+            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml ps || true
+            echo "=== nginx logs ==="
+            NGINX_ID=$(sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q nginx || true)
+            [ -n "$NGINX_ID" ] && sudo docker logs "$NGINX_ID" --tail=200 || echo "nginx container not found"
+            echo "=== app logs ==="
+            APP_ID=$(sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q app || true)
+            [ -n "$APP_ID" ] && sudo docker logs "$APP_ID" --tail=200 || echo "app container not found"
+            exit 1
+          fi
+
+          # Public IP 출력
           echo "=== Public IP (WAN) ==="
           echo "WAN IPv4: $(curl -fsS -4 ifconfig.me || echo 'unknown')"
           echo "WAN via OpenDNS: $(dig +short myip.opendns.com @resolver1.opendns.com 2>/dev/null || echo 'n/a')"
           echo "Local IPs: $(hostname -I 2>/dev/null || echo 'n/a')"
-          
-          # 정리
+
+          # 정리 및 상태
           docker image prune -f || true
-          
-          # 상태 확인
-          sudo docker compose ps
+          sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
           echo "=== 배포 완료 ==="
