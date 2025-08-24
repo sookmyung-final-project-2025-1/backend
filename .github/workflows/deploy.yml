@@ -28,6 +28,9 @@ jobs:
           # Gradle 캐시 정리
           rm -rf .gradle/ build/ || true
           
+          chmod +x ./gradlew
+          ./gradlew bootJar -x test --no-daemon
+          
           # Github Secrets
           cat > .env.prod <<'EOF'
           JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
