@@ -54,8 +54,7 @@ jobs:
           ACTUATOR_HEALTH_DETAILS=when-authorized
           EOF
           
-          echo 'APP_IMAGE=fraud-detection-app:latest' >> .env.prod
-          touch .env
+          cp .env.prod .env
           
           # 기존 이미지 강제 삭제
           sudo docker rmi fraud-detection-app:latest || true
@@ -93,8 +92,7 @@ jobs:
           fi
           
           # 새 컨테이너 시작
-          sudo docker compose --env-file .env.prod \
-            -f docker-compose.yml -f docker-compose.prod.yml \
+          sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml \
             up -d --force-recreate
   
           echo "=== 앱 헬스 체크 ==="
