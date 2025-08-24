@@ -5,7 +5,7 @@ services:
       - "443:443"
 
   app:
-    image: ${APP_IMAGE:-registry.example.com/fraud-detection-app:prod-${GIT_SHA}}
+    image: ${APP_IMAGE:-fraud-detection-app:latest}
     env_file:
       - .env.prod
     environment:
