@@ -54,6 +54,7 @@ jobs:
           ACTUATOR_HEALTH_DETAILS=when-authorized
           EOF
           
+          echo 'APP_IMAGE=fraud-detection-app:latest' >> .env.prod
           cp .env.prod .env
           
           # 기존 이미지 강제 삭제
