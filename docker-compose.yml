@@ -1,20 +1,15 @@
 services:
-  # MySQL 데이터베이스
   mysql:
     image: mysql:8.0
-    container_name: fraud-detection-mysql
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword123}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-fraud_detection}
       MYSQL_USER: ${MYSQL_USER:-fraud_user}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-rootpassword123}
-    ports:
-      - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - fraud-detection-network
+    networks: [fraud-detection-network]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword123}"]
@@ -23,22 +18,17 @@ services:
       interval: 10s
       start_period: 30s
 
-  # Redis 캐시
   redis:
     image: redis:7-alpine
-    container_name: fraud-detection-redis
     volumes:
       - redis_data:/data
-    networks:
-      - fraud-detection-network
+    networks: [fraud-detection-network]
     restart: unless-stopped
 
-  # Spring Boot 애플리케이션
   app:
-    image: fraud-detection-app:latest
-    container_name: fraud-detection-app
+    image: ${APP_IMAGE:-fraud-detection-app:latest}
     env_file:
-      - .env
+      - ${ENV_FILE:-.env}
     environment:
       DB_URL: jdbc:mysql://mysql:3306/fraud_detection?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10
       DB_USERNAME: ${DB_USERNAME:-fraud_user}
@@ -50,54 +40,33 @@ services:
       REDIS_PORT: 6379
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-production}
       DOCKER_ENV: true
-    expose:
-      - "8080"
+    expose: ["8080"]
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_started
-    networks:
-      - fraud-detection-network
+    networks: [fraud-detection-network]
     restart: unless-stopped
-    # 헬스체크 추가
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    # 리소스 제한 (운영 환경 고려)
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '1.0'
-        reservations:
-          memory: 512M
-          cpus: '0.5'
 
-  # nginx 리버스 프록시
   nginx:
     image: nginx:alpine
-    container_name: fraud-detection-nginx
-    ports:
-      - "80:80"    # HTTP 포트
-      - "443:443"  # HTTPS 포트
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro     # 프로젝트 내부 경로
-      - ./nginx/ssl:/etc/nginx/ssl:ro                   # 프로젝트 내부 경로
-    depends_on:
-      - app
-    networks:
-      - fraud-detection-network
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on: [app]
+    networks: [fraud-detection-network]
     restart: unless-stopped
 
 volumes:
   mysql_data:
-    driver: local
   redis_data:
-    driver: local
 
 networks:
   fraud-detection-network:

@@ -1,0 +1,19 @@
+services:
+  nginx:
+    ports:
+      - "8080:80"
+      - "8443:443"
+
+  app:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    image: ${APP_IMAGE:-fraud-detection-app:latest}
+    env_file:
+      - .env.dev
+    environment:
+      SPRING_PROFILES_ACTIVE: development
+
+  mysql:
+    ports:
+      - "3306:3306"
