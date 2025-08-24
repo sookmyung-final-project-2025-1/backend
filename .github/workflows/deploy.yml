@@ -54,6 +54,9 @@ jobs:
           ACTUATOR_HEALTH_DETAILS=when-authorized
           EOF
           
+          echo 'APP_IMAGE=fraud-detection-app:latest' >> .env.prod
+          touch .env
+          
           # 기존 이미지 강제 삭제
           sudo docker rmi fraud-detection-app:latest || true
           
@@ -90,12 +93,10 @@ jobs:
           fi
           
           # 새 컨테이너 시작
-          APP_IMAGE="${{ secrets.APP_IMAGE || 'fraud-detection-app:latest' }}" \
-          ENV_FILE=.env.prod \
-          sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-          up -d --force-recreate
-          
-          # 앱 헬스 체크 (최대 60초 대기)
+          sudo docker compose --env-file .env.prod \
+            -f docker-compose.yml -f docker-compose.prod.yml \
+            up -d --force-recreate
+  
           echo "=== 앱 헬스 체크 ==="
           for i in {1..12}; do
           if ! curl -fsSLk http://localhost/actuator/health >/dev/null 2>&1; then
