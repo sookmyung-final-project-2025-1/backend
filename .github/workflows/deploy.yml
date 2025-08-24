@@ -28,6 +28,8 @@ jobs:
           # Gradle 캐시 정리
           rm -rf .gradle/ build/ || true
           
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk-headless
           chmod +x ./gradlew
           ./gradlew bootJar -x test --no-daemon
           
