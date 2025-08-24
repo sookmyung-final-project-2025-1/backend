@@ -35,7 +35,7 @@ jobs:
           DB_USERNAME=${{ secrets.DB_USERNAME }}
           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
           MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}
-          MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}
+          MAIL_PASSWORD="${{ secrets.MAIL_PASSWORD }}"
           REDIS_HOST=redis
           REDIS_PORT=6379
           MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
@@ -76,6 +76,14 @@ jobs:
           echo "=== DB 권한 체크 및 수정 ==="
           ./scripts/check-and-fix-db-permissions.sh || true
           
+          if [ ! -f nginx/ssl/cert.pem ] || [ ! -f nginx/ssl/key.pem ]; then
+          echo "Generating self-signed cert (prod without real cert)"
+          mkdir -p nginx/ssl
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout nginx/ssl/key.pem -out nginx/ssl/cert.pem \
+            -days 365 -subj "/CN=$(hostname -f || echo localhost)"
+          fi
+          
           # 새 컨테이너 시작
           APP_IMAGE="${{ secrets.APP_IMAGE || 'fraud-detection-app:latest' }}" \
           ENV_FILE=.env.prod \
@@ -85,10 +93,11 @@ jobs:
           # 앱 헬스 체크 (최대 60초 대기)
           echo "=== 앱 헬스 체크 ==="
           for i in {1..12}; do
-            if curl -fsSLk http://localhost/actuator/health >/dev/null 2>&1; then
-              echo "앱이 정상적으로 시작되었습니다"
-              break
-            fi
+          if ! curl -fsSLk http://localhost/actuator/health >/dev/null 2>&1; then
+            echo "=== nginx logs ===";  sudo docker logs $(sudo docker compose ps -q nginx) --tail=200 || true
+            echo "=== app logs ===";    sudo docker logs $(sudo docker compose ps -q app) --tail=200 || true
+            exit 1
+          fi
             echo "앱 시작 대기 중... ($i/12)"
             sleep 5
           done
