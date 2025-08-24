@@ -12,7 +12,7 @@ spring:
     username: ${DB_USERNAME:fraud_user}
     password: ${DB_PASSWORD:rootpassword123}
     driver-class-name: com.mysql.cj.jdbc.Driver
-    
+
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -23,8 +23,8 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: ${DDL_AUTO:update}
-    show-sql: ${JPA_SHOW_SQL:false}
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:${DDL_AUTO:update}}
+    show-sql: ${SPRING_JPA_SHOW_SQL:${JPA_SHOW_SQL:false}}
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
@@ -85,7 +85,7 @@ management:
       base-path: /actuator
   endpoint:
     health:
-      show-details: ${ACTUATOR_HEALTH_DETAILS:when-authorized}
+      show-details: ${MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS:${ACTUATOR_HEALTH_DETAILS:when-authorized}}
       probes:
         enabled: true
 

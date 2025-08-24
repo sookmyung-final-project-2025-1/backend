@@ -39,8 +39,8 @@ out/
 ### 환경 변수 파일 ###
 .env
 .env.local
-.env.production
-.env.development
+.env.prod
+.env.dev
 
 ### 로그 파일 ###
 *.log
@@ -76,3 +76,4 @@ Thumbs.db
 /coverage/
 # SSL certificates (auto-generated)
 nginx/ssl/*.pem
+scripts/
