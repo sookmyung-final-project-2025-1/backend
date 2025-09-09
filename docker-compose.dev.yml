@@ -10,7 +10,7 @@ services:
     #   dockerfile: Dockerfile
     image: ${APP_IMAGE:-fraud-detection-app:latest}
     env_file:
-      - .env.dev
+      - ${ENV_FILE:-.env.dev}
     environment:
       SPRING_PROFILES_ACTIVE: development
 
