@@ -18,3 +18,13 @@ services:
         reservations:
           memory: 512M
           cpus: "0.5"
+
+  model:
+    deploy:
+      resources:
+        limits:
+          memory: 1.2G
+          cpus: "0.9"
+        reservations:
+          memory: 512M
+          cpus: "0.3"

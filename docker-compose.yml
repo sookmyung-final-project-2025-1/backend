@@ -64,6 +64,22 @@ services:
     networks: [fraud-detection-network]
     restart: unless-stopped
 
+  model:
+    image: fraud-model:latest
+    env_file:
+      - ${ENV_FILE:-.env}
+    environment:
+      - MODEL_DIR=${MODEL_DIR:-/app/models/v1}
+    expose: [ "9000" ]
+    networks: [ fraud-detection-network ]
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "http://localhost:9000/health" ]
+      interval: 20s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+
 volumes:
   mysql_data:
   redis_data:
