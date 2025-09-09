@@ -17,3 +17,8 @@ services:
   mysql:
     ports:
       - "3306:3306"
+
+  model:
+    image: fraud-model:latest
+    ports:
+      - "8000:8000"
