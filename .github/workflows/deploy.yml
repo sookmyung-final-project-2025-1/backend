@@ -72,6 +72,11 @@ jobs:
           DDL_AUTO=validate
           JPA_SHOW_SQL=false
           ACTUATOR_HEALTH_DETAILS=when-authorized
+          SPRING_JPA_HIBERNATE_DDL_AUTO=update
+          SPRING_JPA_SHOW_SQL=true
+          MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always
+          MODEL_DIR=/app/models/v1
+          DOCKERHUB_USER=${{ secrets.DOCKERHUB_USER }}
           EOF
           echo 'APP_IMAGE=fraud-detection-app:latest' >> .env.prod
           cp .env.prod .env   # compose 변수 치환용 표준 .env
