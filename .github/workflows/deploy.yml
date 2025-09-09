@@ -1,20 +1,33 @@
-name: Deploy to Raspberry Pi
-
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-
 jobs:
   build-and-deploy:
     runs-on: self-hosted
     if: github.ref == 'refs/heads/main'
 
+    concurrency:
+      group: deploy-main
+      cancel-in-progress: true
+
     steps:
       - uses: actions/checkout@v4
         with:
           path: backend
+          ref: main
+          fetch-depth: 0
+          clean: true
+
+      - name: Verify compose files
+        working-directory: ./backend
+        run: |
+          pwd && ls -al
+          test -f docker-compose.yml
+          test -f docker-compose.prod.yml
+
+      - name: Docker login (for pulling model image)
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USER }}" --password-stdin
+
+      - name: Pull model image (optional but safer)
+        working-directory: ./backend
+        run: sudo docker pull ${{ secrets.DOCKERHUB_USER }}/fraud-model:latest || true
 
       - name: Build and Deploy
         working-directory: ./backend
