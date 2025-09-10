@@ -77,11 +77,17 @@ jobs:
           MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always
           MODEL_DIR=/app/models/v1
           DOCKERHUB_USER=${{ secrets.DOCKERHUB_USER }}
-          MODEL_TAG=${{ vars.LATEST_MODEL_TAG || 'latest' }}
-          MODEL_IMAGE=${{ secrets.DOCKERHUB_USER }}/fraud-model:${{ vars.LATEST_MODEL_TAG || 'latest' }}
           EOF
           echo 'APP_IMAGE=fraud-detection-app:latest' >> .env.prod
-          cp .env.prod .env   # compose 변수 치환용 표준 .env
+          
+          if [ -f .env ] && grep -q '^MODEL_IMAGE=' .env; then
+            CURR_MODEL_IMAGE=$(grep '^MODEL_IMAGE=' .env | tail -n1 | cut -d= -f2-)
+            echo "MODEL_IMAGE=$CURR_MODEL_IMAGE" >> .env.prod
+          else
+            echo "MODEL_IMAGE=${{ secrets.DOCKERHUB_USER }}/fraud-model:latest" >> .env.prod
+          fi
+          
+          cp .env.prod .env
 
           # 기존 이미지/캐시 정리 후 새 이미지 빌드
           sudo docker rmi fraud-detection-app:latest || true
