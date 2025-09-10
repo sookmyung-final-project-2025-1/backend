@@ -40,6 +40,9 @@ services:
       REDIS_PORT: 6379
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-production}
       DOCKER_ENV: true
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+      SERVER_USE_FORWARD_HEADERS: "true"
+      SERVER_TOMCAT_USE_RELATIVE_REDIRECTS: "true"
     expose: ["8080"]
     depends_on:
       mysql:
