@@ -77,6 +77,7 @@ jobs:
           MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always
           MODEL_DIR=/app/models/v1
           DOCKERHUB_USER=${{ secrets.DOCKERHUB_USER }}
+          MODEL_TAG=${{ vars.LATEST_MODEL_TAG || 'latest' }}
           EOF
           echo 'APP_IMAGE=fraud-detection-app:latest' >> .env.prod
           cp .env.prod .env   # compose 변수 치환용 표준 .env
