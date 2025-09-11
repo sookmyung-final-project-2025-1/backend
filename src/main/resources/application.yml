@@ -1,5 +1,5 @@
 jwt:
-  secret: ${JWT_SECRET_KEY}
+  secret: ${JWT_SECRET_KEY:mySecretKeyForDevelopmentUseOnly12345678901234567890}
   access-token-validity-in-seconds: 3600  # 1시간
   refresh-token-validity-in-seconds: 604800  # 7일
 
@@ -126,6 +126,43 @@ spring:
 logging:
   level:
     org.hibernate.type.descriptor.sql.BasicBinder: ${SQL_BIND_LOG_LEVEL:TRACE}
+
+---
+# 테스트 환경용 (H2 In-Memory Database)
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: 
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: create
+    show-sql: true
+    defer-datasource-initialization: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  data:
+    redis:
+      host: localhost  # Redis 없이 실행
+      port: 6379
+      timeout: 1000ms
+  mail:
+    host: localhost
+    port: 25
+    username: test
+    password: test
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.mail.MailSenderAutoConfiguration
 
 ---
 # 운영 환경용

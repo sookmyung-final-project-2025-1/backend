@@ -10,19 +10,31 @@ import com.credit.card.fraud.detection.company.entity.Company;
 import com.credit.card.fraud.detection.company.repository.CompanyRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AuthService {
 
     private final CompanyRepository companyRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final EmailService emailService;
+    private final Optional<EmailService> emailService;
+    
+    public AuthService(CompanyRepository companyRepository, 
+                      PasswordEncoder passwordEncoder, 
+                      JwtService jwtService,
+                      @Autowired(required = false) EmailService emailService) {
+        this.companyRepository = companyRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
+        this.emailService = Optional.ofNullable(emailService);
+    }
 
     /**
      * 이메일 인증 코드 발송
@@ -37,15 +49,23 @@ public class AuthService {
         }
 
         try {
-            log.info("EmailService.sendVerificationCode 호출 전");
-            emailService.sendVerificationCode(email);
-            log.info("EmailService.sendVerificationCode 호출 후");
+            if (emailService.isPresent()) {
+                log.info("EmailService.sendVerificationCode 호출 전");
+                emailService.get().sendVerificationCode(email);
+                log.info("EmailService.sendVerificationCode 호출 후");
 
-            int expirationSeconds = emailService.getExpirationSeconds(email);
-            return EmailVerificationResponse.success(
-                    "인증 코드가 발송되었습니다.",
-                    expirationSeconds
-            );
+                int expirationSeconds = emailService.get().getExpirationSeconds(email);
+                return EmailVerificationResponse.success(
+                        "인증 코드가 발송되었습니다.",
+                        expirationSeconds
+                );
+            } else {
+                log.warn("EmailService가 비활성화되어 있습니다 (test 프로파일)");
+                return EmailVerificationResponse.success(
+                        "테스트 모드: 인증 코드 발송을 건너뜁니다.",
+                        300
+                );
+            }
         } catch (Exception e) {
             log.error("=== 이메일 인증 코드 발송 실패 ===");
             log.error("Email: {}", email);
@@ -60,12 +80,17 @@ public class AuthService {
      * 이메일 인증 코드 검증
      */
     public EmailVerificationResponse verifyEmailCode(EmailVerificationCodeRequest request) {
-        boolean isValid = emailService.verifyCode(request.getEmail(), request.getCode());
-
-        if (isValid) {
-            return EmailVerificationResponse.success("이메일 인증이 완료되었습니다. 이제 회원가입을 진행하세요.", 0);
+        if (emailService.isPresent()) {
+            boolean isValid = emailService.get().verifyCode(request.getEmail(), request.getCode());
+            
+            if (isValid) {
+                return EmailVerificationResponse.success("이메일 인증이 완료되었습니다. 이제 회원가입을 진행하세요.", 0);
+            } else {
+                return EmailVerificationResponse.failure("인증 코드가 올바르지 않거나 만료되었습니다.");
+            }
         } else {
-            return EmailVerificationResponse.failure("인증 코드가 올바르지 않거나 만료되었습니다.");
+            log.warn("EmailService가 비활성화되어 있습니다 (test 프로파일)");
+            return EmailVerificationResponse.success("테스트 모드: 인증 코드 검증을 건너뜁니다.", 0);
         }
     }
 
@@ -81,8 +106,13 @@ public class AuthService {
             throw new RuntimeException("이미 가입된 이메일입니다.");
         }
 
-        if (!emailService.isEmailVerified(email)) {
+        if (emailService.isPresent() && !emailService.get().isEmailVerified(email)) {
             throw new RuntimeException("이메일 인증이 완료되지 않았습니다. 먼저 이메일 인증을 완료해주세요.");
+        }
+        
+        // test 모드에서는 이메일 인증 체크 건너뛰기
+        if (!emailService.isPresent()) {
+            log.warn("EmailService가 비활성화되어 있습니다 (test 프로파일) - 이메일 인증 건너뛰기");
         }
 
         try {
@@ -98,7 +128,9 @@ public class AuthService {
 
             companyRepository.save(company);
 
-            emailService.clearEmailVerification(email);
+            if (emailService.isPresent()) {
+                emailService.get().clearEmailVerification(email);
+            }
 
             String token = jwtService.generateToken(email);
 
