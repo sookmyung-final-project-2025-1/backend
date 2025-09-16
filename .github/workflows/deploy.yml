@@ -87,7 +87,7 @@ jobs:
             echo "MODEL_IMAGE=${{ secrets.DOCKERHUB_USER }}/fraud-model:latest" >> .env.prod
           fi
           
-          cp .env.prod .env
+          cat .env.prod > .env
 
           # 기존 이미지/캐시 정리 후 새 이미지 빌드
           sudo docker rmi fraud-detection-app:latest || true
