@@ -18,13 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          path: backend
+          path: .
           ref: main
           fetch-depth: 0
           clean: true
 
       - name: Verify compose files
-        working-directory: ./backend
+        working-directory: .
         run: |
           pwd && ls -al
           test -f docker-compose.yml
@@ -34,11 +34,11 @@ jobs:
         run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USER }}" --password-stdin
 
       - name: Pull model image (optional but safer)
-        working-directory: ./backend
+        working-directory: .
         run: sudo docker pull ${{ secrets.DOCKERHUB_USER }}/fraud-model:latest || true
 
       - name: Build and Deploy
-        working-directory: ./backend
+        working-directory: .
         run: |
           echo "=== 배포 시작 ==="
 
