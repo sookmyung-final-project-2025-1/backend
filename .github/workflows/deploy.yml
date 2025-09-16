@@ -115,6 +115,10 @@ jobs:
             openssl req -x509 -newkey rsa:2048 -nodes \
               -keyout nginx/ssl/key.pem -out nginx/ssl/cert.pem \
               -days 365 -subj "/CN=$(hostname -f || echo localhost)"
+            
+            # 권한 설정 추가
+            chmod 644 nginx/ssl/cert.pem nginx/ssl/key.pem
+            chown $USER:$USER nginx/ssl/cert.pem nginx/ssl/key.pem
           fi
 
           # 새 컨테이너 시작
