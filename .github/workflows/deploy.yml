@@ -90,7 +90,7 @@ jobs:
             CURR_MODEL_IMAGE=$(grep '^MODEL_IMAGE=' .env | tail -n1 | cut -d= -f2-)
             echo "MODEL_IMAGE=$CURR_MODEL_IMAGE" >> .env.prod
           else
-            echo "MODEL_IMAGE=${{ secrets.DOCKERHUB_USER }}/fraud-model:v1-initial" >> .env.prod
+            echo "MODEL_IMAGE=${{ secrets.DOCKERHUB_USER }}/fraud-model:v1-15-77cfecb92bf65eaabb5c3316c9effc1c0e778b1a" >> .env.prod
           fi
 
           # .env 갱신
