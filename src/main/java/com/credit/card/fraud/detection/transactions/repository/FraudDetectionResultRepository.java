@@ -44,28 +44,37 @@ public interface FraudDetectionResultRepository extends JpaRepository<FraudDetec
     Double averageProcessingTime(@Param("startTime") LocalDateTime startTime, 
                                @Param("endTime") LocalDateTime endTime);
 
-    @Query("SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY fdr.processingTimeMs) " +
-           "FROM FraudDetectionResult fdr " +
-           "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime")
-    Double medianProcessingTime(@Param("startTime") LocalDateTime startTime, 
-                              @Param("endTime") LocalDateTime endTime);
-
-    @Query("SELECT PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY fdr.processingTimeMs) " +
-           "FROM FraudDetectionResult fdr " +
-           "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime")
-    Double p95ProcessingTime(@Param("startTime") LocalDateTime startTime, 
-                           @Param("endTime") LocalDateTime endTime);
-
-    @Query("SELECT DATE_TRUNC('hour', fdr.predictionTime) as hour, " +
-           "AVG(fdr.confidenceScore) as avgConfidence, " +
-           "COUNT(fdr) as totalCount, " +
-           "AVG(CAST(fdr.processingTimeMs AS double)) as avgProcessingTime " +
-           "FROM FraudDetectionResult fdr " +
-           "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime " +
-           "GROUP BY DATE_TRUNC('hour', fdr.predictionTime) " +
-           "ORDER BY hour")
-    List<Object[]> getHourlyStats(@Param("startTime") LocalDateTime startTime, 
+    @Query(value = "SELECT processing_time_ms FROM fraud_detection_results " +
+            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
+            "ORDER BY processing_time_ms " +
+            "LIMIT 1 OFFSET (SELECT FLOOR(COUNT(*)/2) FROM fraud_detection_results " +
+            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime)",
+            nativeQuery = true)
+    Double medianProcessingTime(@Param("startTime") LocalDateTime startTime,
                                 @Param("endTime") LocalDateTime endTime);
+
+    // For 95th percentile, we calculate the position and get that row
+    @Query(value = "SELECT processing_time_ms FROM fraud_detection_results " +
+            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
+            "ORDER BY processing_time_ms " +
+            "LIMIT 1 OFFSET (SELECT FLOOR(COUNT(*) * 0.95) FROM fraud_detection_results " +
+            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime)",
+            nativeQuery = true)
+    Double p95ProcessingTime(@Param("startTime") LocalDateTime startTime,
+                             @Param("endTime") LocalDateTime endTime);
+
+    // MySQL equivalent using DATE_FORMAT to truncate to hour
+    @Query(value = "SELECT DATE_FORMAT(prediction_time, '%Y-%m-%d %H:00:00') as hour, " +
+            "AVG(confidence_score) as avgConfidence, " +
+            "COUNT(*) as totalCount, " +
+            "AVG(processing_time_ms) as avgProcessingTime " +
+            "FROM fraud_detection_results " +
+            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
+            "GROUP BY DATE_FORMAT(prediction_time, '%Y-%m-%d %H:00:00') " +
+            "ORDER BY hour",
+            nativeQuery = true)
+    List<Object[]> getHourlyStats(@Param("startTime") LocalDateTime startTime,
+                                  @Param("endTime") LocalDateTime endTime);
 
     List<FraudDetectionResult> findTop1000ByOrderByPredictionTimeDesc();
 
