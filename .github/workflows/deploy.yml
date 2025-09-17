@@ -101,6 +101,10 @@ jobs:
           sudo docker builder prune -f || true
           docker build --no-cache --pull -t fraud-detection-app:latest .
 
+          echo "=== SSL 인증서 생성 ==="
+          chmod +x ./setup-ssl.sh
+          ./setup-ssl.sh
+
           # 호스트 nginx 중지(포트 충돌 방지)
           sudo systemctl stop nginx || true
 
