@@ -4,6 +4,9 @@ import com.credit.card.fraud.detection.transactions.entity.Transaction;
 import com.credit.card.fraud.detection.transactions.service.TransactionService;
 import com.credit.card.fraud.detection.transactions.service.TransactionStreamingService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +28,9 @@ public class TestController {
 
     @GetMapping("/health")
     @Operation(summary = "상태 확인", description = "기본 상태 확인 엔드포인트")
+    @ApiResponse(responseCode = "200", description = "상태 확인 성공",
+        content = @Content(mediaType = "application/json",
+            examples = @ExampleObject(value = "{\"status\": \"OK\", \"timestamp\": \"2023-09-17T14:30:00\", \"service\": \"Credit Card Fraud Detection Platform\"}")))
     public ResponseEntity<Map<String, Object>> healthCheck() {
         return ResponseEntity.ok(Map.of(
             "status", "OK",
@@ -56,6 +62,9 @@ public class TestController {
 
     @GetMapping("/streaming-status")
     @Operation(summary = "스트리밍 상태 조회", description = "테스트용 현재 스트리밍 상태를 조회합니다")
+    @ApiResponse(responseCode = "200", description = "스트리밍 상태 조회 성공",
+        content = @Content(mediaType = "application/json",
+            examples = @ExampleObject(value = "{\"isStreaming\": true, \"mode\": \"TIMEMACHINE\", \"speed\": 10.0, \"currentTime\": \"2017-01-01T08:30:00\"}")))
     public ResponseEntity<Map<String, Object>> getStreamingStatus() {
         Map<String, Object> status = streamingService.getStreamingStatus();
         return ResponseEntity.ok(status);
@@ -63,6 +72,9 @@ public class TestController {
 
     @PostMapping("/start-demo")
     @Operation(summary = "데모 스트리밍 시작", description = "샘플 데이터로 데모 스트리밍을 시작합니다")
+    @ApiResponse(responseCode = "200", description = "데모 시작 성공",
+        content = @Content(mediaType = "application/json",
+            examples = @ExampleObject(value = "{\"message\": \"Demo started successfully\", \"mode\": \"Time Machine (10x speed)\", \"startTime\": \"2017-01-01T00:00:00\"}")))
     public ResponseEntity<Map<String, String>> startDemo() {
         // 10배속 타임머신 모드로 데모 시작
         streamingService.startTimeMachineStreaming(

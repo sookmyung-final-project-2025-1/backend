@@ -5,6 +5,9 @@ import com.credit.card.fraud.detection.modelclient.dto.ModelWeightsUpdateRequest
 import com.credit.card.fraud.detection.modelclient.service.EnsembleModelService;
 import com.credit.card.fraud.detection.transactions.repository.FraudDetectionResultRepository;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +31,9 @@ public class ModelController {
 
     @GetMapping("/weights")
     @Operation(summary = "현재 모델 가중치 조회", description = "앙상블 모델의 현재 가중치를 조회합니다")
+    @ApiResponse(responseCode = "200", description = "가중치 조회 성공",
+        content = @Content(mediaType = "application/json",
+            examples = @ExampleObject(value = "{\"lgbm\": 0.4, \"xgboost\": 0.35, \"catboost\": 0.25, \"threshold\": 0.5}")))
     public ResponseEntity<Map<String, BigDecimal>> getCurrentWeights() {
         Map<String, BigDecimal> weights = ensembleModelService.getCurrentWeights();
         weights.put("threshold", ensembleModelService.getCurrentThreshold());
@@ -36,6 +42,9 @@ public class ModelController {
 
     @PutMapping("/weights")
     @Operation(summary = "모델 가중치 업데이트", description = "앙상블 모델의 가중치를 업데이트합니다")
+    @ApiResponse(responseCode = "200", description = "가중치 업데이트 성공",
+        content = @Content(mediaType = "application/json",
+            examples = @ExampleObject(value = "{\"status\": \"Weights updated successfully\", \"weights\": {\"lgbm\": 0.4, \"xgboost\": 0.35, \"catboost\": 0.25}}")))
     public ResponseEntity<Map<String, Object>> updateWeights(@Valid @RequestBody ModelWeightsUpdateRequest request) {
         ensembleModelService.updateWeights(request);
         
@@ -53,6 +62,9 @@ public class ModelController {
 
     @PutMapping("/threshold")
     @Operation(summary = "예측 임계값 업데이트", description = "사기 예측 임계값을 업데이트합니다")
+    @ApiResponse(responseCode = "200", description = "임계값 업데이트 성공",
+        content = @Content(mediaType = "application/json",
+            examples = @ExampleObject(value = "{\"status\": \"Threshold updated successfully\", \"threshold\": 0.5}")))
     public ResponseEntity<Map<String, Object>> updateThreshold(@RequestParam BigDecimal threshold) {
         ensembleModelService.updateThreshold(threshold);
         
@@ -99,6 +111,9 @@ public class ModelController {
 
     @PostMapping("/retrain")
     @Operation(summary = "모델 재학습 시작", description = "새로운 골드 라벨로 모델 재학습을 시작합니다 (시뮬레이션)")
+    @ApiResponse(responseCode = "200", description = "재학습 시작 성공",
+        content = @Content(mediaType = "application/json",
+            examples = @ExampleObject(value = "{\"status\": \"Model retraining triggered\", \"message\": \"Retraining will start with updated gold labels\", \"estimatedTime\": \"15-30 minutes\"}")))
     public ResponseEntity<Map<String, String>> triggerRetraining() {
         // 실제 환경에서는 여기서 모델 재학습 파이프라인을 시작
         // 현재는 시뮬레이션만 수행
@@ -112,6 +127,9 @@ public class ModelController {
 
     @GetMapping("/feature-importance")
     @Operation(summary = "피처 중요도 조회", description = "최근 예측 결과들의 평균 피처 중요도를 조회합니다")
+    @ApiResponse(responseCode = "200", description = "피처 중요도 조회 성공",
+        content = @Content(mediaType = "application/json",
+            examples = @ExampleObject(value = "{\"featureImportance\": {\"amount\": 0.20, \"merchant_category\": 0.14, \"C1\": 0.15}, \"sampleSize\": 1000, \"calculatedAt\": \"2025-09-17T12:00:00\"}")))
     public ResponseEntity<Map<String, Object>> getFeatureImportance(
             @RequestParam(defaultValue = "1000") Integer sampleSize) {
         
