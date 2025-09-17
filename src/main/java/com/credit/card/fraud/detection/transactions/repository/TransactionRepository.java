@@ -72,12 +72,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     Optional<Transaction> findByExternalTransactionId(String externalTransactionId);
 
-    @Query("SELECT DATE(t.virtualTime) as date, COUNT(t) as count, " +
-           "SUM(CASE WHEN t.isFraud = true THEN 1 ELSE 0 END) as fraudCount " +
-           "FROM Transaction t " +
-           "WHERE t.virtualTime >= :startDate AND t.virtualTime <= :endDate " +
-           "GROUP BY DATE(t.virtualTime) " +
-           "ORDER BY DATE(t.virtualTime)")
-    List<Object[]> getDailyTransactionStats(@Param("startDate") LocalDateTime startDate, 
-                                          @Param("endDate") LocalDateTime endDate);
+    @Query(value = "SELECT DATE(virtual_time) as date, COUNT(*) as count, " +
+            "SUM(CASE WHEN is_fraud = true THEN 1 ELSE 0 END) as fraudCount " +
+            "FROM transactions " +
+            "WHERE virtual_time >= :startDate AND virtual_time <= :endDate " +
+            "GROUP BY DATE(virtual_time) " +
+            "ORDER BY DATE(virtual_time)",
+            nativeQuery = true)
+    List<Object[]> getDailyTransactionStats(@Param("startDate") LocalDateTime startDate,
+                                            @Param("endDate") LocalDateTime endDate);
 }

@@ -19,51 +19,65 @@ public interface FraudDetectionResultRepository extends JpaRepository<FraudDetec
     Optional<FraudDetectionResult> findByTransaction_Id(Long transactionId);
 
     List<FraudDetectionResult> findByPredictionTimeBetweenOrderByPredictionTimeDesc(
-        LocalDateTime startTime, LocalDateTime endTime);
+            LocalDateTime startTime, LocalDateTime endTime);
 
     @Query("SELECT AVG(fdr.confidenceScore) FROM FraudDetectionResult fdr " +
-           "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime")
-    BigDecimal averageConfidenceScore(@Param("startTime") LocalDateTime startTime, 
-                                    @Param("endTime") LocalDateTime endTime);
+            "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime")
+    BigDecimal averageConfidenceScore(@Param("startTime") LocalDateTime startTime,
+                                      @Param("endTime") LocalDateTime endTime);
 
     @Query("SELECT fdr FROM FraudDetectionResult fdr " +
-           "WHERE fdr.finalScore >= :minScore AND fdr.finalScore <= :maxScore " +
-           "ORDER BY fdr.predictionTime DESC")
-    Page<FraudDetectionResult> findByScoreRange(@Param("minScore") BigDecimal minScore, 
-                                              @Param("maxScore") BigDecimal maxScore, 
-                                              Pageable pageable);
+            "WHERE fdr.finalScore >= :minScore AND fdr.finalScore <= :maxScore " +
+            "ORDER BY fdr.predictionTime DESC")
+    Page<FraudDetectionResult> findByScoreRange(@Param("minScore") BigDecimal minScore,
+                                                @Param("maxScore") BigDecimal maxScore,
+                                                Pageable pageable);
 
     @Query("SELECT COUNT(fdr) FROM FraudDetectionResult fdr " +
-           "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime " +
-           "AND fdr.finalPrediction = true")
-    Long countFraudPredictionsInTimeWindow(@Param("startTime") LocalDateTime startTime, 
-                                         @Param("endTime") LocalDateTime endTime);
+            "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime " +
+            "AND fdr.finalPrediction = true")
+    Long countFraudPredictionsInTimeWindow(@Param("startTime") LocalDateTime startTime,
+                                           @Param("endTime") LocalDateTime endTime);
 
     @Query("SELECT AVG(CAST(fdr.processingTimeMs AS double)) FROM FraudDetectionResult fdr " +
-           "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime")
-    Double averageProcessingTime(@Param("startTime") LocalDateTime startTime, 
-                               @Param("endTime") LocalDateTime endTime);
+            "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime")
+    Double averageProcessingTime(@Param("startTime") LocalDateTime startTime,
+                                 @Param("endTime") LocalDateTime endTime);
 
-    @Query(value = "SELECT processing_time_ms FROM fraud_detection_results " +
-            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
-            "ORDER BY processing_time_ms " +
-            "LIMIT 1 OFFSET (SELECT FLOOR(COUNT(*)/2) FROM fraud_detection_results " +
-            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime)",
+    @Query(value = "SELECT " +
+            "CASE " +
+            "  WHEN COUNT(*) = 0 THEN NULL " +
+            "  ELSE (" +
+            "    SELECT processing_time_ms " +
+            "    FROM fraud_detection_results " +
+            "    WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
+            "    ORDER BY processing_time_ms " +
+            "    LIMIT 1 OFFSET GREATEST(0, FLOOR((SELECT COUNT(*) FROM fraud_detection_results WHERE prediction_time >= :startTime AND prediction_time <= :endTime)/2))" +
+            "  ) " +
+            "END " +
+            "FROM fraud_detection_results " +
+            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime",
             nativeQuery = true)
     Double medianProcessingTime(@Param("startTime") LocalDateTime startTime,
                                 @Param("endTime") LocalDateTime endTime);
 
-    // For 95th percentile, we calculate the position and get that row
-    @Query(value = "SELECT processing_time_ms FROM fraud_detection_results " +
-            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
-            "ORDER BY processing_time_ms " +
-            "LIMIT 1 OFFSET (SELECT FLOOR(COUNT(*) * 0.95) FROM fraud_detection_results " +
-            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime)",
+    @Query(value = "SELECT " +
+            "CASE " +
+            "  WHEN COUNT(*) = 0 THEN NULL " +
+            "  ELSE (" +
+            "    SELECT processing_time_ms " +
+            "    FROM fraud_detection_results " +
+            "    WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
+            "    ORDER BY processing_time_ms " +
+            "    LIMIT 1 OFFSET GREATEST(0, FLOOR((SELECT COUNT(*) FROM fraud_detection_results WHERE prediction_time >= :startTime AND prediction_time <= :endTime) * 0.95))" +
+            "  ) " +
+            "END " +
+            "FROM fraud_detection_results " +
+            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime",
             nativeQuery = true)
     Double p95ProcessingTime(@Param("startTime") LocalDateTime startTime,
                              @Param("endTime") LocalDateTime endTime);
 
-    // MySQL equivalent using DATE_FORMAT to truncate to hour
     @Query(value = "SELECT DATE_FORMAT(prediction_time, '%Y-%m-%d %H:00:00') as hour, " +
             "AVG(confidence_score) as avgConfidence, " +
             "COUNT(*) as totalCount, " +
@@ -79,10 +93,10 @@ public interface FraudDetectionResultRepository extends JpaRepository<FraudDetec
     List<FraudDetectionResult> findTop1000ByOrderByPredictionTimeDesc();
 
     @Query("SELECT fdr FROM FraudDetectionResult fdr " +
-           "JOIN fdr.transaction t " +
-           "WHERE fdr.finalScore >= :threshold " +
-           "AND fdr.predictionTime >= :startTime " +
-           "ORDER BY fdr.finalScore DESC")
-    List<FraudDetectionResult> findHighRiskTransactions(@Param("threshold") BigDecimal threshold, 
-                                                       @Param("startTime") LocalDateTime startTime);
+            "JOIN fdr.transaction t " +
+            "WHERE fdr.finalScore >= :threshold " +
+            "AND fdr.predictionTime >= :startTime " +
+            "ORDER BY fdr.finalScore DESC")
+    List<FraudDetectionResult> findHighRiskTransactions(@Param("threshold") BigDecimal threshold,
+                                                        @Param("startTime") LocalDateTime startTime);
 }
