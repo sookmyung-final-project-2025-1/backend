@@ -2,7 +2,7 @@ name: Deploy to Raspberry Pi
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 
@@ -12,7 +12,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     concurrency:
-      group: deploy-main
+      group: deploy-app
       cancel-in-progress: true
 
     steps:
@@ -33,27 +33,31 @@ jobs:
       - name: Docker login (for pulling model image)
         run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USER }}" --password-stdin
 
-      - name: Pull model image (optional but safer)
+      - name: Pull model image (optional)
         working-directory: .
-        run: sudo docker pull ${{ secrets.DOCKERHUB_USER }}/fraud-model:latest || true
+        run: |
+          if grep -q '^MODEL_IMAGE=' .env 2>/dev/null; then
+            IMG=$(grep '^MODEL_IMAGE=' .env | tail -n1 | cut -d= -f2-)
+            echo "Pulling $IMG"
+            sudo docker pull "$IMG" || true
+          else
+            echo "No MODEL_IMAGE in .env; skip pulling"
+          fi
 
       - name: Build and Deploy
         working-directory: .
         run: |
           echo "=== 배포 시작 ==="
-
-          # 배포 대상 환경
           ENVIRONMENT=${DEPLOYMENT_ENV:-prod}
           echo "배포 환경: $ENVIRONMENT"
 
-          # Gradle 빌드 준비 & JAR 생성
           rm -rf .gradle/ build/ || true
           sudo apt-get update
           sudo apt-get install -y openjdk-17-jdk-headless
           chmod +x ./gradlew
           ./gradlew bootJar -x test --no-daemon
 
-          # === Secrets -> .env.prod 생성
+          # .env.prod 생성
           cat > .env.prod <<'EOF'
           JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
           DB_URL=${{ secrets.DB_URL }}
@@ -76,20 +80,23 @@ jobs:
           SPRING_JPA_SHOW_SQL=true
           MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always
           MODEL_DIR=/app/models/v1
+          MODEL_VERSION=v1
           DOCKERHUB_USER=${{ secrets.DOCKERHUB_USER }}
           EOF
           echo 'APP_IMAGE=fraud-detection-app:latest' >> .env.prod
-          
+
+          # 기존 .env의 MODEL_IMAGE가 있으면 유지
           if [ -f .env ] && grep -q '^MODEL_IMAGE=' .env; then
             CURR_MODEL_IMAGE=$(grep '^MODEL_IMAGE=' .env | tail -n1 | cut -d= -f2-)
             echo "MODEL_IMAGE=$CURR_MODEL_IMAGE" >> .env.prod
           else
-            echo "MODEL_IMAGE=${{ secrets.DOCKERHUB_USER }}/fraud-model:latest" >> .env.prod
+            echo "MODEL_IMAGE=${{ secrets.DOCKERHUB_USER }}/fraud-model:v1-initial" >> .env.prod
           fi
-          
-          cat .env.prod > .env
 
-          # 기존 이미지/캐시 정리 후 새 이미지 빌드
+          # .env 갱신
+          cp .env.prod .env
+
+          # 이미지 빌드
           sudo docker rmi fraud-detection-app:latest || true
           sudo docker builder prune -f || true
           docker build --no-cache --pull -t fraud-detection-app:latest .
@@ -97,35 +104,11 @@ jobs:
           # 호스트 nginx 중지(포트 충돌 방지)
           sudo systemctl stop nginx || true
 
-          # 기존 스택 내리기(동일 -f 조합)
+          # 스택 재기동
           sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml down || true
+          sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate
 
-          # DB 권한 스크립트가 있을 때만 실행
-          echo "=== DB 권한 체크 및 수정 ==="
-          if [ -x ./scripts/check-and-fix-db-permissions.sh ]; then
-            ./scripts/check-and-fix-db-permissions.sh || true
-          else
-            echo "skip: ./scripts/check-and-fix-db-permissions.sh not found"
-          fi
-
-          # prod에서 인증서 없으면 자가서명 생성
-          if [ ! -f nginx/ssl/cert.pem ] || [ ! -f nginx/ssl/key.pem ]; then
-            echo "Generating self-signed cert (prod without real cert)"
-            mkdir -p nginx/ssl
-            openssl req -x509 -newkey rsa:2048 -nodes \
-              -keyout nginx/ssl/key.pem -out nginx/ssl/cert.pem \
-              -days 365 -subj "/CN=$(hostname -f || echo localhost)"
-            
-            # 권한 설정 추가
-            chmod 644 nginx/ssl/cert.pem nginx/ssl/key.pem
-            chown $USER:$USER nginx/ssl/cert.pem nginx/ssl/key.pem
-          fi
-
-          # 새 컨테이너 시작
-          sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-            up -d --force-recreate
-
-          # 앱 헬스 체크 (최대 60초 대기, 실패 시에만 로그 덤프)
+          # 앱 헬스 체크
           echo "=== 앱 헬스 체크 ==="
           ok=false
           for i in {1..12}; do
@@ -134,10 +117,9 @@ jobs:
               ok=true
               break
             fi
-            echo "앱 시작 대기 중... ($i/12)"
-            sleep 5
+            echo "앱 시작 대기 중... ($i/12)"; sleep 5
           done
-          if [ "$ok" != "true" ]; then
+          if [ "$ok" != "true" ] ; then
             echo "=== docker compose ps ==="
             sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml ps || true
             echo "=== nginx logs ==="
@@ -149,13 +131,6 @@ jobs:
             exit 1
           fi
 
-          # Public IP 출력
-          echo "=== Public IP (WAN) ==="
-          echo "WAN IPv4: $(curl -fsS -4 ifconfig.me || echo 'unknown')"
-          echo "WAN via OpenDNS: $(dig +short myip.opendns.com @resolver1.opendns.com 2>/dev/null || echo 'n/a')"
-          echo "Local IPs: $(hostname -I 2>/dev/null || echo 'n/a')"
-
-          # 정리 및 상태
           docker image prune -f || true
           sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
           echo "=== 배포 완료 ==="
