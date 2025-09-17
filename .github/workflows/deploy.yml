@@ -103,7 +103,7 @@ jobs:
 
           echo "=== SSL 인증서 생성 ==="
           chmod +x ./setup-ssl.sh
-          ./setup-ssl.sh
+          sudo ./setup-ssl.sh
 
           # 호스트 nginx 중지(포트 충돌 방지)
           sudo systemctl stop nginx || true
