@@ -16,6 +16,11 @@ jobs:
       cancel-in-progress: true
 
     steps:
+      - name: 작업공간 권한 정리
+        run: |
+          sudo chown -R $USER:$USER /home/1117mg/actions-runner/_work/backend/backend || true
+          sudo chmod -R u+w /home/1117mg/actions-runner/_work/backend/backend || true
+
       - uses: actions/checkout@v4
         with:
           path: .
@@ -90,7 +95,7 @@ jobs:
             CURR_MODEL_IMAGE=$(grep '^MODEL_IMAGE=' .env | tail -n1 | cut -d= -f2-)
             echo "MODEL_IMAGE=$CURR_MODEL_IMAGE" >> .env.prod
           else
-            echo "MODEL_IMAGE=${{ secrets.DOCKERHUB_USER }}/fraud-model:v1-15-77cfecb92bf65eaabb5c3316c9effc1c0e778b1a" >> .env.prod
+            echo "MODEL_IMAGE=${{ secrets.DOCKERHUB_USER }}/fraud-model:v1.0.0" >> .env.prod
           fi
 
           # .env 갱신
