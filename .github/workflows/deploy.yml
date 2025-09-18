@@ -38,7 +38,10 @@ jobs:
           # Data 레포에서 최신 릴리즈 정보 가져오기
           LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/sookmyung-final-project-2025-1/Data/releases/latest" | \
-            jq -r '.tag_name // "v1.0.0"')
+            grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4 || echo "v1.0.0")
+          if [ -z "$LATEST_RELEASE" ]; then
+            LATEST_RELEASE="v1.0.0"
+          fi
           echo "latest_release=$LATEST_RELEASE" >> $GITHUB_OUTPUT
           echo "Latest model release: $LATEST_RELEASE"
 
