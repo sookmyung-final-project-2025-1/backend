@@ -1,6 +1,5 @@
 package com.credit.card.fraud.detection.transactions.service;
 
-import com.credit.card.fraud.detection.modelclient.service.ConfidenceScoreService;
 import com.credit.card.fraud.detection.transactions.entity.UserReport;
 import com.credit.card.fraud.detection.transactions.repository.UserReportRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,12 +22,12 @@ import java.util.Map;
 public class UserReportService {
 
     private final UserReportRepository userReportRepository;
-    private final ConfidenceScoreService confidenceScoreService;
     private final SimpMessagingTemplate messagingTemplate;
+    
+    private ModelUpdateService modelUpdateService;
 
     public Page<UserReport> getReports(UserReport.ReportStatus status, String reportedBy,
                                      LocalDateTime startDate, LocalDateTime endDate, Pageable pageable) {
-        // 실제 구현에서는 Repository의 동적 쿼리 메서드 사용
         if (status != null) {
             return userReportRepository.findByStatusOrderByCreatedAtDesc(status, pageable);
         }
@@ -43,64 +42,98 @@ public class UserReportService {
     @Transactional
     public Map<String, Object> reviewReport(Long reportId, String reviewedBy, String comment,
                                           Boolean isFraud, String action) {
+        if (reportId == null || reviewedBy == null || action == null) {
+            throw new IllegalArgumentException("Report ID, reviewer, and action cannot be null");
+        }
+
         UserReport report = getReportById(reportId);
 
         // 기존 신뢰도 점수 기록
-        BigDecimal confidenceScoreBefore = confidenceScoreService.getCurrentConfidenceScore();
+        BigDecimal confidenceScoreBefore = getCurrentConfidenceScore();
 
         Map<String, Object> result = new HashMap<>();
         result.put("reportId", reportId);
         result.put("reviewedBy", reviewedBy);
 
-        switch (action.toUpperCase()) {
-            case "APPROVE":
-                report.approve(reviewedBy, comment, isFraud);
-                result.put("status", "APPROVED");
-                result.put("isFraudConfirmed", isFraud);
+        try {
+            switch (action.toUpperCase()) {
+                case "APPROVE":
+                    approveReport(report, reviewedBy, comment, isFraud, result, confidenceScoreBefore);
+                    break;
 
-                // 골드 라벨 업데이트로 인한 모델 개선 시뮬레이션
-                if (isFraud != null) {
-                    triggerModelUpdateFromGoldLabel(report, isFraud);
-                    result.put("modelUpdateTriggered", true);
+                case "REJECT":
+                    rejectReport(report, reviewedBy, comment, result);
+                    break;
 
-                    // 업데이트 후 신뢰도 점수
-                    BigDecimal confidenceScoreAfter = confidenceScoreService.getCurrentConfidenceScore();
-                    result.put("confidenceScoreChange", Map.of(
-                        "before", confidenceScoreBefore,
-                        "after", confidenceScoreAfter,
-                        "improvement", confidenceScoreAfter.subtract(confidenceScoreBefore)
-                    ));
-                }
-                break;
+                case "UNDER_REVIEW":
+                    setReportUnderReview(report, reviewedBy, comment, result);
+                    break;
 
-            case "REJECT":
-                report.reject(reviewedBy, comment);
-                result.put("status", "REJECTED");
-                result.put("modelUpdateTriggered", false);
-                break;
+                default:
+                    throw new IllegalArgumentException("Invalid action: " + action);
+            }
 
-            case "UNDER_REVIEW":
-                report.setStatus(UserReport.ReportStatus.UNDER_REVIEW);
-                report.setReviewedBy(reviewedBy);
-                report.setReviewComment(comment);
-                result.put("status", "UNDER_REVIEW");
-                result.put("modelUpdateTriggered", false);
-                break;
+            userReportRepository.save(report);
+            result.put("reviewedAt", LocalDateTime.now());
 
-            default:
-                throw new IllegalArgumentException("Invalid action: " + action);
+            // 관리자에게 실시간 알림
+            sendReportReviewNotification(report, action);
+
+            log.info("Report {} reviewed by {}: action={}, isFraud={}",
+                reportId, reviewedBy, action, isFraud);
+
+        } catch (Exception e) {
+            log.error("Failed to review report {}: {}", reportId, e.getMessage(), e);
+            throw new RuntimeException("Failed to review report: " + e.getMessage(), e);
         }
 
-        userReportRepository.save(report);
-        result.put("reviewedAt", LocalDateTime.now());
-
-        // 관리자에게 실시간 알림
-        sendReportReviewNotification(report, action);
-
-        log.info("Report {} reviewed by {}: action={}, isFraud={}",
-            reportId, reviewedBy, action, isFraud);
-
         return result;
+    }
+
+    private void approveReport(UserReport report, String reviewedBy, String comment, 
+                              Boolean isFraud, Map<String, Object> result, 
+                              BigDecimal confidenceScoreBefore) {
+        report.approve(reviewedBy, comment, isFraud);
+        result.put("status", "APPROVED");
+        result.put("isFraudConfirmed", isFraud);
+
+        // 골드 라벨 업데이트로 인한 모델 개선 시뮬레이션
+        if (isFraud != null) {
+            triggerModelUpdateFromGoldLabel(report, isFraud);
+            result.put("modelUpdateTriggered", true);
+
+            // 업데이트 후 신뢰도 점수
+            BigDecimal confidenceScoreAfter = getCurrentConfidenceScore();
+            result.put("confidenceScoreChange", Map.of(
+                "before", confidenceScoreBefore,
+                "after", confidenceScoreAfter,
+                "improvement", confidenceScoreAfter.subtract(confidenceScoreBefore)
+            ));
+        }
+    }
+
+    private void rejectReport(UserReport report, String reviewedBy, String comment, 
+                             Map<String, Object> result) {
+        report.reject(reviewedBy, comment);
+        result.put("status", "REJECTED");
+        result.put("modelUpdateTriggered", false);
+    }
+
+    private void setReportUnderReview(UserReport report, String reviewedBy, String comment, 
+                                     Map<String, Object> result) {
+        report.setStatus(UserReport.ReportStatus.UNDER_REVIEW);
+        report.setReviewedBy(reviewedBy);
+        report.setReviewComment(comment);
+        result.put("status", "UNDER_REVIEW");
+        result.put("modelUpdateTriggered", false);
+    }
+
+    private BigDecimal getCurrentConfidenceScore() {
+        // 모델 업데이트 서비스가 있다면 사용, 없다면 기본값 반환
+        if (modelUpdateService != null) {
+            return modelUpdateService.getCurrentConfidenceScore();
+        }
+        return new BigDecimal("0.85");
     }
 
     private void triggerModelUpdateFromGoldLabel(UserReport report, Boolean isFraud) {
@@ -110,10 +143,16 @@ public class UserReportService {
         log.info("Triggering model update from gold label: transactionId={}, goldLabel={}",
             report.getTransaction().getId(), isFraud);
 
-        // 신뢰도 점수 향상 시뮬레이션
-        confidenceScoreService.triggerModelUpdate();
+        // 모델 업데이트 서비스 호출
+        if (modelUpdateService != null) {
+            modelUpdateService.triggerModelUpdate();
+        }
 
         // 모델 업데이트 알림 전송
+        sendModelUpdateNotification(report, isFraud);
+    }
+
+    private void sendModelUpdateNotification(UserReport report, Boolean isFraud) {
         Map<String, Object> updateNotification = new HashMap<>();
         updateNotification.put("type", "MODEL_UPDATE_FROM_GOLD_LABEL");
         updateNotification.put("transactionId", report.getTransaction().getId());
@@ -138,50 +177,64 @@ public class UserReportService {
     }
 
     public Map<String, Object> getReportStats(Integer days) {
+        if (days == null || days <= 0) {
+            throw new IllegalArgumentException("Days must be a positive number");
+        }
+
         LocalDateTime startDate = LocalDateTime.now().minusDays(days);
         LocalDateTime endDate = LocalDateTime.now();
 
         Map<String, Object> stats = new HashMap<>();
 
-        // 기간별 신고 통계
-        long totalReports = userReportRepository.countReportsInPeriod(startDate, endDate);
-        long approvedReports = userReportRepository.countApprovedReportsInPeriod(startDate, endDate, UserReport.ReportStatus.APPROVED);
-        long rejectedReports = userReportRepository.countRejectedReportsInPeriod(startDate, endDate, UserReport.ReportStatus.REJECTED);
-        long pendingReports = userReportRepository.countPendingReportsInPeriod(startDate, endDate, UserReport.ReportStatus.PENDING);
+        try {
+            // 기간별 신고 통계
+            long totalReports = userReportRepository.countReportsInPeriod(startDate, endDate);
+            long approvedReports = userReportRepository.countApprovedReportsInPeriod(startDate, endDate, UserReport.ReportStatus.APPROVED);
+            long rejectedReports = userReportRepository.countRejectedReportsInPeriod(startDate, endDate, UserReport.ReportStatus.REJECTED);
+            long pendingReports = userReportRepository.countPendingReportsInPeriod(startDate, endDate, UserReport.ReportStatus.PENDING);
 
-        stats.put("totalReports", totalReports);
-        stats.put("approvedReports", approvedReports);
-        stats.put("rejectedReports", rejectedReports);
-        stats.put("pendingReports", pendingReports);
+            stats.put("totalReports", totalReports);
+            stats.put("approvedReports", approvedReports);
+            stats.put("rejectedReports", rejectedReports);
+            stats.put("pendingReports", pendingReports);
 
-        // 승인률 계산
-        double approvalRate = totalReports > 0 ?
-            (approvedReports * 100.0) / totalReports : 0.0;
-        stats.put("approvalRate", approvalRate);
+            // 승인률 계산
+            double approvalRate = totalReports > 0 ?
+                (approvedReports * 100.0) / totalReports : 0.0;
+            stats.put("approvalRate", Math.round(approvalRate * 100.0) / 100.0);
 
-        // 평균 처리 시간 (시뮬레이션)
-        stats.put("averageProcessingHours", 24.5 + (Math.random() * 48)); // 24-72시간
+            // 평균 처리 시간 (시뮬레이션)
+            stats.put("averageProcessingHours", 24.5 + (Math.random() * 48)); // 24-72시간
 
-        // 골드 라벨 정확도 (시뮬레이션)
-        stats.put("goldLabelAccuracy", 85.0 + (Math.random() * 10)); // 85-95%
+            // 골드 라벨 정확도 (시뮬레이션)
+            stats.put("goldLabelAccuracy", 85.0 + (Math.random() * 10)); // 85-95%
 
-        // 주요 신고 사유 통계
-        Map<String, Long> reasonStats = new HashMap<>();
-        reasonStats.put("SUSPICIOUS_TRANSACTION", 45L);
-        reasonStats.put("UNAUTHORIZED_CHARGE", 32L);
-        reasonStats.put("WRONG_AMOUNT", 18L);
-        reasonStats.put("DUPLICATE_CHARGE", 12L);
-        reasonStats.put("OTHER", 8L);
-        stats.put("reportReasons", reasonStats);
+            // 주요 신고 사유 통계
+            Map<String, Long> reasonStats = new HashMap<>();
+            reasonStats.put("SUSPICIOUS_TRANSACTION", 45L);
+            reasonStats.put("UNAUTHORIZED_CHARGE", 32L);
+            reasonStats.put("WRONG_AMOUNT", 18L);
+            reasonStats.put("DUPLICATE_CHARGE", 12L);
+            reasonStats.put("OTHER", 8L);
+            stats.put("reportReasons", reasonStats);
 
-        stats.put("period", days + " days");
-        stats.put("calculatedAt", LocalDateTime.now());
+            stats.put("period", days + " days");
+            stats.put("calculatedAt", LocalDateTime.now());
+
+        } catch (Exception e) {
+            log.error("Failed to calculate report stats: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to calculate report statistics", e);
+        }
 
         return stats;
     }
 
     @Transactional
     public void setPriority(Long reportId, String priority) {
+        if (reportId == null || priority == null) {
+            throw new IllegalArgumentException("Report ID and priority cannot be null");
+        }
+
         // 실제 구현에서는 priority 필드를 UserReport 엔티티에 추가
         // 현재는 로그만 기록
         log.info("Setting priority for report {}: {}", reportId, priority);
@@ -201,6 +254,9 @@ public class UserReportService {
     }
 
     public List<UserReport> getReportsByTransaction(Long transactionId) {
+        if (transactionId == null) {
+            throw new IllegalArgumentException("Transaction ID cannot be null");
+        }
         return userReportRepository.findByTransactionIdOrderByCreatedAtDesc(transactionId);
     }
 
@@ -227,5 +283,16 @@ public class UserReportService {
         } catch (Exception e) {
             log.warn("Failed to send report review notification: {}", e.getMessage());
         }
+    }
+
+    // 모델 업데이트 서비스 주입을 위한 setter (순환 참조 방지)
+    public void setModelUpdateService(ModelUpdateService modelUpdateService) {
+        this.modelUpdateService = modelUpdateService;
+    }
+
+    // 모델 업데이트 인터페이스 정의
+    public interface ModelUpdateService {
+        void triggerModelUpdate();
+        BigDecimal getCurrentConfidenceScore();
     }
 }

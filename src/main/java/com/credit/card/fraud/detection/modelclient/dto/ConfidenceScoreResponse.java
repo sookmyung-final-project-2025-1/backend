@@ -36,25 +36,13 @@ public class ConfidenceScoreResponse {
         private Integer transactionCount;
         private String period;
         private Boolean isModelUpdatePoint; // 모델 업데이트 시점 마커
-    }
-
-    // 기존 호환성을 위한 별칭
-    @Deprecated
-    public static class TimeSeriesPoint extends TimeSeriesData {
-        public TimeSeriesPoint() {
-            super();
-        }
-
-        public TimeSeriesPoint(LocalDateTime timestamp, BigDecimal confidenceScore, Integer transactionCount, String period, Boolean isModelUpdatePoint) {
-            super(timestamp, confidenceScore, transactionCount, period, isModelUpdatePoint);
-        }
 
         public Long getTransactionCountAsLong() {
-            return super.getTransactionCount() != null ? super.getTransactionCount().longValue() : null;
+            return transactionCount != null ? transactionCount.longValue() : null;
         }
 
         public void setTransactionCountFromLong(Long transactionCount) {
-            super.setTransactionCount(transactionCount != null ? transactionCount.intValue() : null);
+            this.transactionCount = transactionCount != null ? transactionCount.intValue() : null;
         }
     }
 
@@ -63,6 +51,17 @@ public class ConfidenceScoreResponse {
             .currentConfidenceScore(currentScore)
             .calculatedAt(LocalDateTime.now())
             .timeSeries(timeSeries)
+            .build();
+    }
+
+    public static ConfidenceScoreResponse of(BigDecimal currentScore, List<TimeSeriesData> timeSeries, 
+                                           String driftStatus, BigDecimal alertThreshold) {
+        return ConfidenceScoreResponse.builder()
+            .currentConfidenceScore(currentScore)
+            .calculatedAt(LocalDateTime.now())
+            .timeSeries(timeSeries)
+            .modelDriftStatus(driftStatus)
+            .alertThreshold(alertThreshold)
             .build();
     }
 }

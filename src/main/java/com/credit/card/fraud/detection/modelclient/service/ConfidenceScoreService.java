@@ -1,7 +1,6 @@
 package com.credit.card.fraud.detection.modelclient.service;
 
 import com.credit.card.fraud.detection.modelclient.dto.ConfidenceScoreResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -14,7 +13,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ConfidenceScoreService {
 
@@ -24,8 +22,8 @@ public class ConfidenceScoreService {
 
     // 모델 드리프트 시뮬레이션을 위한 변수들
     private final Random random = new Random();
-    private LocalDateTime lastUpdateTime = LocalDateTime.now();
-    private double driftRate = 0.001; // 시간당 0.1% 드리프트
+    private volatile LocalDateTime lastUpdateTime = LocalDateTime.now();
+    private volatile double driftRate = 0.001; // 시간당 0.1% 드리프트
 
     public ConfidenceScoreResponse getConfidenceScore(LocalDateTime startTime, LocalDateTime endTime, String period) {
         // 현재 신뢰도 점수 업데이트 (모델 드리프트 시뮬레이션)
@@ -43,10 +41,15 @@ public class ConfidenceScoreService {
             .timeSeries(timeSeries)
             .modelDriftStatus(calculateDriftStatus(currentScore))
             .alertThreshold(new BigDecimal("0.6"))
+            .lastModelUpdate(getLastModelUpdateTime())
             .build();
     }
 
     public void recordConfidenceScore(BigDecimal score, LocalDateTime timestamp, Integer transactionCount) {
+        if (score == null || timestamp == null) {
+            throw new IllegalArgumentException("Score and timestamp cannot be null");
+        }
+        
         // 실제 운영에서는 실시간으로 confidence score를 계산하여 기록
         String hourKey = timestamp.format(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH"));
 
@@ -58,7 +61,7 @@ public class ConfidenceScoreService {
         cleanupOldData();
     }
 
-    private void updateConfidenceScore() {
+    private synchronized void updateConfidenceScore() {
         LocalDateTime now = LocalDateTime.now();
         long minutesSinceLastUpdate = java.time.Duration.between(lastUpdateTime, now).toMinutes();
 
@@ -102,6 +105,7 @@ public class ConfidenceScoreService {
                     .confidenceScore(score)
                     .transactionCount(transactionCount)
                     .period(period)
+                    .isModelUpdatePoint(isModelUpdatePoint(current))
                     .build();
 
             timeSeries.add(dataPoint);
@@ -183,7 +187,17 @@ public class ConfidenceScoreService {
         confidenceHistory.entrySet().removeIf(entry -> entry.getKey().compareTo(cutoffKey) < 0);
     }
 
-    public void triggerModelUpdate() {
+    private boolean isModelUpdatePoint(LocalDateTime timestamp) {
+        // 모델 업데이트 시점을 시뮬레이션 (예: 매일 자정)
+        return timestamp.getHour() == 0 && timestamp.getMinute() == 0;
+    }
+
+    private LocalDateTime getLastModelUpdateTime() {
+        // 마지막 모델 업데이트 시간 시뮬레이션
+        return LocalDateTime.now().minusHours(random.nextInt(24) + 1);
+    }
+
+    public synchronized void triggerModelUpdate() {
         // 모델 업데이트 후 신뢰도 점수 향상 시뮬레이션
         BigDecimal currentScore = currentConfidenceScore.get();
         BigDecimal improvedScore = currentScore.add(new BigDecimal("0.05")) // 5% 향상
