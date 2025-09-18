@@ -107,14 +107,26 @@ app:
         subject: "[신용카드 사기탐지 서비스] 이메일 인증 코드"
         content: |
           안녕하세요.
-          
+
           신용카드 사기탐지 서비스 회원가입을 위한 인증 코드입니다.
-          
+
           인증 코드: %s
-          
+
           이 코드는 5분간 유효합니다.
-          
+
           감사합니다.
+
+model:
+  service:
+    enabled: ${MODEL_SERVICE_ENABLED:true}
+    url: ${MODEL_SERVICE_URL:http://model:8000}
+    timeout: ${MODEL_SERVICE_TIMEOUT:30000}
+    retry:
+      max-attempts: ${MODEL_SERVICE_RETRY_MAX_ATTEMPTS:3}
+      delay: ${MODEL_SERVICE_RETRY_DELAY:1000}
+    github:
+      data-repo: ${MODEL_DATA_REPO:sookmyung-final-project-2025-1/Data}
+      default-version: ${MODEL_DEFAULT_VERSION:v1.0.0}
 
 ---
 # 개발 환경용
@@ -126,6 +138,11 @@ spring:
 logging:
   level:
     org.hibernate.type.descriptor.sql.BasicBinder: ${SQL_BIND_LOG_LEVEL:TRACE}
+
+model:
+  service:
+    enabled: ${MODEL_SERVICE_ENABLED:false}  # 개발 환경에서는 시뮬레이션 사용
+    url: ${MODEL_SERVICE_URL:http://localhost:8000}
 
 ---
 # 테스트 환경용 (H2 In-Memory Database)
@@ -163,6 +180,10 @@ spring:
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.mail.MailSenderAutoConfiguration
+
+model:
+  service:
+    enabled: false  # 테스트 환경에서는 항상 시뮬레이션 사용
 
 ---
 # 운영 환경용

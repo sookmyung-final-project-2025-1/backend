@@ -3,6 +3,7 @@ package com.credit.card.fraud.detection.modelclient.service;
 import com.credit.card.fraud.detection.modelclient.dto.ModelPredictionRequest;
 import com.credit.card.fraud.detection.modelclient.dto.ModelPredictionResponse;
 import com.credit.card.fraud.detection.modelclient.dto.ModelWeightsUpdateRequest;
+import com.credit.card.fraud.detection.global.config.ModelServiceProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,26 +24,142 @@ public class EnsembleModelService {
     private final AtomicReference<BigDecimal> xgboostWeight = new AtomicReference<>(new BigDecimal("0.333"));
     private final AtomicReference<BigDecimal> catboostWeight = new AtomicReference<>(new BigDecimal("0.334"));
     private final AtomicReference<BigDecimal> threshold = new AtomicReference<>(new BigDecimal("0.5"));
-    
+
+    private final ModelServiceClient modelServiceClient;
+    private final ModelServiceProperties modelServiceProperties;
     private final Random random = new Random();
 
     public ModelPredictionResponse predict(ModelPredictionRequest request) {
         long startTime = System.currentTimeMillis();
-        
+
+        try {
+            // 현재 가중치 설정
+            Map<String, BigDecimal> currentWeights = getCurrentWeights();
+            request.setModelWeights(currentWeights);
+            request.setThreshold(threshold.get());
+
+            // 실제 모델 서비스 사용 여부 확인
+            if (modelServiceProperties.isEnabled() && modelServiceClient.isModelServiceHealthy()) {
+                log.debug("Using real model service for transaction {}", request.getTransactionId());
+
+                // 실제 모델 API 호출
+                ModelPredictionResponse response = modelServiceClient.predictEnsemble(request);
+
+                // 모델 버전 정보 추가
+                Map<String, Object> versionInfo = modelServiceClient.getModelVersion();
+                response.setModelVersion(versionInfo.getOrDefault("version", "v1.0.0").toString());
+
+                // 피처 중요도와 신뢰도 점수 추가
+                response.setFeatureImportance(generateFeatureImportance());
+                response.setConfidenceScore(calculateConfidenceScore(response.getFinalScore()));
+
+                log.debug("Real model prediction completed for transaction {}: finalScore={}, prediction={}",
+                    request.getTransactionId(), response.getFinalScore(), response.getFinalPrediction());
+
+                return response;
+
+            } else {
+                log.warn("Model service not available, using simulation for transaction {}", request.getTransactionId());
+
+                // 폴백: 시뮬레이션 로직 사용
+                return predictWithSimulation(request, startTime);
+            }
+
+        } catch (Exception e) {
+            log.error("Error during prediction for transaction {}: {}, falling back to simulation",
+                request.getTransactionId(), e.getMessage());
+
+            // 오류 시 시뮬레이션 로직으로 폴백
+            return predictWithSimulation(request, startTime);
+        }
+    }
+
+    /**
+     * 사용자 정의 가중치로 예측 수행
+     */
+    public ModelPredictionResponse predictWithCustomWeights(
+            ModelPredictionRequest request,
+            BigDecimal lgbmWeight,
+            BigDecimal xgboostWeight,
+            BigDecimal catboostWeight) {
+
+        // 가중치 정규화 (총합이 1이 되도록)
+        BigDecimal totalWeight = lgbmWeight.add(xgboostWeight).add(catboostWeight);
+        if (totalWeight.compareTo(BigDecimal.ONE) != 0) {
+            lgbmWeight = lgbmWeight.divide(totalWeight, 6, RoundingMode.HALF_UP);
+            xgboostWeight = xgboostWeight.divide(totalWeight, 6, RoundingMode.HALF_UP);
+            catboostWeight = catboostWeight.divide(totalWeight, 6, RoundingMode.HALF_UP);
+
+            log.info("Normalized custom weights - LGBM: {}, XGBoost: {}, CatBoost: {}",
+                lgbmWeight, xgboostWeight, catboostWeight);
+        }
+
+        // 사용자 정의 가중치 설정
+        Map<String, BigDecimal> customWeights = new HashMap<>();
+        customWeights.put("lgbm", lgbmWeight);
+        customWeights.put("xgboost", xgboostWeight);
+        customWeights.put("catboost", catboostWeight);
+
+        request.setModelWeights(customWeights);
+        request.setThreshold(threshold.get());
+
+        long startTime = System.currentTimeMillis();
+
+        try {
+            // 실제 모델 서비스 사용 여부 확인
+            if (modelServiceProperties.isEnabled() && modelServiceClient.isModelServiceHealthy()) {
+                log.debug("Using real model service with custom weights for transaction {}", request.getTransactionId());
+
+                // 실제 모델 API 호출
+                ModelPredictionResponse response = modelServiceClient.predictEnsemble(request);
+
+                // 모델 버전 정보 추가
+                Map<String, Object> versionInfo = modelServiceClient.getModelVersion();
+                response.setModelVersion(versionInfo.getOrDefault("version", "v1.0.0").toString());
+
+                // 피처 중요도와 신뢰도 점수 추가
+                response.setFeatureImportance(generateFeatureImportance());
+                response.setConfidenceScore(calculateConfidenceScore(response.getFinalScore()));
+
+                log.debug("Real model prediction with custom weights completed for transaction {}: finalScore={}, prediction={}",
+                    request.getTransactionId(), response.getFinalScore(), response.getFinalPrediction());
+
+                return response;
+
+            } else {
+                log.warn("Model service not available, using simulation with custom weights for transaction {}", request.getTransactionId());
+
+                // 폴백: 시뮬레이션 로직 사용
+                return predictWithSimulationCustomWeights(request, startTime, customWeights);
+            }
+
+        } catch (Exception e) {
+            log.error("Error during custom weight prediction for transaction {}: {}, falling back to simulation",
+                request.getTransactionId(), e.getMessage());
+
+            // 오류 시 시뮬레이션 로직으로 폴백
+            return predictWithSimulationCustomWeights(request, startTime, customWeights);
+        }
+    }
+
+    /**
+     * 시뮬레이션을 통한 예측 (폴백 로직)
+     */
+    private ModelPredictionResponse predictWithSimulation(ModelPredictionRequest request, long startTime) {
         try {
             // 시뮬레이션된 개별 모델 점수 생성
             BigDecimal lgbmScore = generateModelScore(request, "lgbm");
             BigDecimal xgboostScore = generateModelScore(request, "xgboost");
             BigDecimal catboostScore = generateModelScore(request, "catboost");
-            
+
             // 현재 가중치 가져오기
             BigDecimal currentLgbmWeight = lgbmWeight.get();
             BigDecimal currentXgboostWeight = xgboostWeight.get();
             BigDecimal currentCatboostWeight = catboostWeight.get();
             BigDecimal currentThreshold = threshold.get();
-            
+
             long processingTime = System.currentTimeMillis() - startTime;
-            
+
             ModelPredictionResponse response = ModelPredictionResponse.success(
                 request.getTransactionId(),
                 lgbmScore,
@@ -54,19 +171,66 @@ public class EnsembleModelService {
                 currentThreshold,
                 processingTime
             );
-            
+
             // 피처 중요도 시뮬레이션 추가
             response.setFeatureImportance(generateFeatureImportance());
             response.setConfidenceScore(calculateConfidenceScore(response.getFinalScore()));
-            response.setModelVersion("v1.0.0");
-            
-            log.debug("Prediction completed for transaction {}: finalScore={}, prediction={}", 
+            response.setModelVersion("v1.0.0-simulation");
+
+            log.debug("Simulation prediction completed for transaction {}: finalScore={}, prediction={}",
                 request.getTransactionId(), response.getFinalScore(), response.getFinalPrediction());
-                
+
             return response;
-            
+
         } catch (Exception e) {
-            log.error("Error during prediction for transaction {}: {}", request.getTransactionId(), e.getMessage());
+            log.error("Simulation prediction failed for transaction {}: {}", request.getTransactionId(), e.getMessage());
+            return ModelPredictionResponse.error(request.getTransactionId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 사용자 정의 가중치를 사용한 시뮬레이션 예측
+     */
+    private ModelPredictionResponse predictWithSimulationCustomWeights(
+            ModelPredictionRequest request, long startTime, Map<String, BigDecimal> customWeights) {
+        try {
+            // 시뮬레이션된 개별 모델 점수 생성
+            BigDecimal lgbmScore = generateModelScore(request, "lgbm");
+            BigDecimal xgboostScore = generateModelScore(request, "xgboost");
+            BigDecimal catboostScore = generateModelScore(request, "catboost");
+
+            // 사용자 정의 가중치 사용
+            BigDecimal currentLgbmWeight = customWeights.get("lgbm");
+            BigDecimal currentXgboostWeight = customWeights.get("xgboost");
+            BigDecimal currentCatboostWeight = customWeights.get("catboost");
+            BigDecimal currentThreshold = threshold.get();
+
+            long processingTime = System.currentTimeMillis() - startTime;
+
+            ModelPredictionResponse response = ModelPredictionResponse.success(
+                request.getTransactionId(),
+                lgbmScore,
+                xgboostScore,
+                catboostScore,
+                currentLgbmWeight,
+                currentXgboostWeight,
+                currentCatboostWeight,
+                currentThreshold,
+                processingTime
+            );
+
+            // 피처 중요도 시뮬레이션 추가
+            response.setFeatureImportance(generateFeatureImportance());
+            response.setConfidenceScore(calculateConfidenceScore(response.getFinalScore()));
+            response.setModelVersion("v1.0.0-simulation-custom");
+
+            log.debug("Simulation prediction with custom weights completed for transaction {}: finalScore={}, prediction={}",
+                request.getTransactionId(), response.getFinalScore(), response.getFinalPrediction());
+
+            return response;
+
+        } catch (Exception e) {
+            log.error("Custom weights simulation prediction failed for transaction {}: {}", request.getTransactionId(), e.getMessage());
             return ModelPredictionResponse.error(request.getTransactionId(), e.getMessage());
         }
     }

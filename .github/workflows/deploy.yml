@@ -32,6 +32,16 @@ jobs:
           chmod +x ./gradlew
           ./gradlew bootJar -x test --no-daemon
 
+      - name: Get latest model release
+        id: get_latest_release
+        run: |
+          # Data 레포에서 최신 릴리즈 정보 가져오기
+          LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/sookmyung-final-project-2025-1/Data/releases/latest" | \
+            jq -r '.tag_name // "v1.0.0"')
+          echo "latest_release=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+          echo "Latest model release: $LATEST_RELEASE"
+
       - name: Create production environment
         run: |
           cat > .env <<'EOF'
@@ -51,10 +61,14 @@ jobs:
           SPRING_JPA_HIBERNATE_DDL_AUTO=update
           SPRING_JPA_SHOW_SQL=true
           MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always
-          MODEL_DIR=/app/models/v1
-          MODEL_VERSION=v1
+          MODEL_SERVICE_ENABLED=true
+          MODEL_SERVICE_URL=${{ secrets.MODEL_SERVICE_URL }}
+          MODEL_DIR=/app/models
+          MODEL_VERSION=${{ steps.get_latest_release.outputs.latest_release }}
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO=sookmyung-final-project-2025-1/Data
           APP_IMAGE=fraud-detection-app:latest
-          MODEL_IMAGE=${{ secrets.DOCKERHUB_USER }}/fraud-model:v1.0.0
+          MODEL_IMAGE=ghcr.io/sookmyung-final-project-2025-1/fraud-model:latest
           EOF
 
       - name: Build and deploy
