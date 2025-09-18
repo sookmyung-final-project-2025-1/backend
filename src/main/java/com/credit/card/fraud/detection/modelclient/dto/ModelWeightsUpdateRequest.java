@@ -9,6 +9,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 @Data
 @NoArgsConstructor
@@ -37,9 +38,9 @@ public class ModelWeightsUpdateRequest {
     public void normalizeWeights() {
         BigDecimal sum = lgbmWeight.add(xgboostWeight).add(catboostWeight);
         if (sum.compareTo(BigDecimal.ZERO) > 0) {
-            lgbmWeight = lgbmWeight.divide(sum, 6, BigDecimal.ROUND_HALF_UP);
-            xgboostWeight = xgboostWeight.divide(sum, 6, BigDecimal.ROUND_HALF_UP);
-            catboostWeight = catboostWeight.divide(sum, 6, BigDecimal.ROUND_HALF_UP);
+            lgbmWeight = lgbmWeight.divide(sum, 6, RoundingMode.HALF_UP);
+            xgboostWeight = xgboostWeight.divide(sum, 6, RoundingMode.HALF_UP);
+            catboostWeight = catboostWeight.divide(sum, 6, RoundingMode.HALF_UP);
         }
     }
     

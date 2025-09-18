@@ -12,12 +12,12 @@ public class DataTypeConverter {
 
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    public ConfidenceScoreResponse.TimeSeriesPoint convertToTimeSeriesPoint(Object[] row, String period) {
+    public ConfidenceScoreResponse.TimeSeriesData convertToTimeSeriesData(Object[] row, String period) {
         LocalDateTime timestamp = parseTimestamp(row[0]);
         BigDecimal confidenceScore = parseConfidenceScore(row[1]);
-        Long transactionCount = parseTransactionCount(row[2]);
-        
-        return ConfidenceScoreResponse.TimeSeriesPoint.builder()
+        Integer transactionCount = parseTransactionCount(row[2]);
+
+        return ConfidenceScoreResponse.TimeSeriesData.builder()
             .timestamp(timestamp)
             .confidenceScore(confidenceScore)
             .transactionCount(transactionCount)
@@ -47,12 +47,12 @@ public class DataTypeConverter {
         return BigDecimal.ZERO;
     }
 
-    private Long parseTransactionCount(Object obj) {
-        if (obj instanceof Long) {
-            return (Long) obj;
+    private Integer parseTransactionCount(Object obj) {
+        if (obj instanceof Integer) {
+            return (Integer) obj;
         } else if (obj instanceof Number) {
-            return ((Number) obj).longValue();
+            return ((Number) obj).intValue();
         }
-        return 0L;
+        return 0;
     }
 }

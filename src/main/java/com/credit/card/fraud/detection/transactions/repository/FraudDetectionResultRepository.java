@@ -39,28 +39,33 @@ public interface FraudDetectionResultRepository extends JpaRepository<FraudDetec
     Long countFraudPredictionsInTimeWindow(@Param("startTime") LocalDateTime startTime,
                                            @Param("endTime") LocalDateTime endTime);
 
-    @Query("SELECT AVG(CAST(fdr.processingTimeMs AS double)) FROM FraudDetectionResult fdr " +
+    @Query("SELECT AVG(fdr.processingTimeMs) FROM FraudDetectionResult fdr " +
             "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime")
     Double averageProcessingTime(@Param("startTime") LocalDateTime startTime,
                                  @Param("endTime") LocalDateTime endTime);
 
-    @Query(value = "SELECT AVG(processing_time_ms) FROM (" +
-            "SELECT processing_time_ms FROM fraud_detection_results " +
+    @Query(value = "SELECT AVG(sub.processing_time_ms) FROM (" +
+            "SELECT processing_time_ms, " +
+            "ROW_NUMBER() OVER (ORDER BY processing_time_ms) as rn, " +
+            "COUNT(*) OVER () as cnt " +
+            "FROM fraud_detection_results " +
             "WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
-            "AND processing_time_ms IS NOT NULL " +
-            "ORDER BY processing_time_ms " +
-            "LIMIT 2 - (SELECT COUNT(*) FROM fraud_detection_results WHERE prediction_time >= :startTime AND prediction_time <= :endTime AND processing_time_ms IS NOT NULL) % 2 " +
-            "OFFSET (SELECT (COUNT(*) - 1) DIV 2 FROM fraud_detection_results WHERE prediction_time >= :startTime AND prediction_time <= :endTime AND processing_time_ms IS NOT NULL)" +
-            ") AS median_calc",
+            "AND processing_time_ms IS NOT NULL" +
+            ") sub " +
+            "WHERE sub.rn IN (FLOOR((sub.cnt + 1) / 2), CEIL((sub.cnt + 1) / 2))",
             nativeQuery = true)
     Double medianProcessingTime(@Param("startTime") LocalDateTime startTime,
                                 @Param("endTime") LocalDateTime endTime);
 
-    @Query(value = "SELECT processing_time_ms FROM fraud_detection_results " +
-            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
-            "AND processing_time_ms IS NOT NULL " +
-            "ORDER BY processing_time_ms DESC " +
-            "LIMIT 1 OFFSET (SELECT FLOOR(COUNT(*) * 0.05) FROM fraud_detection_results WHERE prediction_time >= :startTime AND prediction_time <= :endTime AND processing_time_ms IS NOT NULL)",
+    @Query(value = "SELECT processing_time_ms FROM " +
+            "(SELECT processing_time_ms, " +
+            " ROW_NUMBER() OVER (ORDER BY processing_time_ms DESC) as rn, " +
+            " COUNT(*) OVER () as total_count " +
+            " FROM fraud_detection_results " +
+            " WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
+            " AND processing_time_ms IS NOT NULL" +
+            ") ranked " +
+            "WHERE rn = FLOOR(total_count * 0.05) + 1",
             nativeQuery = true)
     Double p95ProcessingTime(@Param("startTime") LocalDateTime startTime,
                              @Param("endTime") LocalDateTime endTime);
