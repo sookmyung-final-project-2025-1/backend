@@ -35,11 +35,11 @@ jobs:
         run: echo "PR too large; skipping review." && exit 0
 
       - name: Run Claude Code Review
-        uses: anthropics/claude-code-action@main
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.CLAUDE_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          mode: review
+          mode: pr-comments
           prompt: |
             You are a senior software engineer reviewing code for a junior backend development team. Write in Korean.
 
