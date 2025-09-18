@@ -39,6 +39,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.CLAUDE_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          mode: review
           prompt: |
             You are a senior software engineer reviewing code for a junior backend development team. Write in Korean.
 
