@@ -35,8 +35,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     Long countUniqueUsersInTimeWindow(@Param("startTime") LocalDateTime startTime, 
                                     @Param("endTime") LocalDateTime endTime);
 
-    @Query("SELECT AVG(CAST(t.amount AS double)) FROM Transaction t WHERE t.virtualTime >= :startTime AND t.virtualTime < :endTime")
-    Double averageTransactionAmountInTimeWindow(@Param("startTime") LocalDateTime startTime, 
+    @Query("SELECT AVG(t.amount) FROM Transaction t WHERE t.virtualTime >= :startTime AND t.virtualTime < :endTime")
+    Double averageTransactionAmountInTimeWindow(@Param("startTime") LocalDateTime startTime,
                                               @Param("endTime") LocalDateTime endTime);
 
     List<Transaction> findByUserIdOrderByVirtualTimeDesc(String userId);
@@ -81,4 +81,17 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
             nativeQuery = true)
     List<Object[]> getDailyTransactionStats(@Param("startDate") LocalDateTime startDate,
                                             @Param("endDate") LocalDateTime endDate);
+
+    // 사기 거래 금액 합계
+    @Query("SELECT SUM(t.amount) FROM Transaction t WHERE t.virtualTime >= :startTime AND t.virtualTime < :endTime AND t.isFraud = true")
+    Double sumFraudTransactionAmounts(@Param("startTime") LocalDateTime startTime,
+                                    @Param("endTime") LocalDateTime endTime);
+
+    @Query("SELECT COUNT(DISTINCT t.userId) FROM Transaction t " +
+            "WHERE t.userId NOT IN (" +
+            "  SELECT DISTINCT t2.userId FROM Transaction t2 " +
+            "  WHERE t2.transactionTime < :startTime" +
+            ") AND t.transactionTime >= :startTime AND t.transactionTime <= :endTime")
+    Long countNewUsersInPeriod(@Param("startTime") LocalDateTime startTime,
+                                @Param("endTime") LocalDateTime endTime);
 }

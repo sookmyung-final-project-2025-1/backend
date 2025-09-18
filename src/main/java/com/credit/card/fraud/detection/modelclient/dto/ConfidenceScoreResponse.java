@@ -14,27 +14,54 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 public class ConfidenceScoreResponse {
-    
+
     private BigDecimal currentConfidenceScore;
     private LocalDateTime calculatedAt;
-    private List<TimeSeriesPoint> timeSeries;
-    
+    private List<TimeSeriesData> timeSeries;
+
+    // 모델 드리프트 관련 정보
+    private String modelDriftStatus;  // STABLE, MINOR_DRIFT, MAJOR_DRIFT
+    private BigDecimal alertThreshold;
+    private LocalDateTime lastModelUpdate;
+    private BigDecimal scoreBeforeUpdate;
+    private BigDecimal scoreAfterUpdate;
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
-    public static class TimeSeriesPoint {
+    public static class TimeSeriesData {
         private LocalDateTime timestamp;
         private BigDecimal confidenceScore;
-        private Long transactionCount;
-        private String period; // "hourly", "daily"
+        private Integer transactionCount;
+        private String period;
+        private Boolean isModelUpdatePoint; // 모델 업데이트 시점 마커
+
+        public Long getTransactionCountAsLong() {
+            return transactionCount != null ? transactionCount.longValue() : null;
+        }
+
+        public void setTransactionCountFromLong(Long transactionCount) {
+            this.transactionCount = transactionCount != null ? transactionCount.intValue() : null;
+        }
     }
-    
-    public static ConfidenceScoreResponse of(BigDecimal currentScore, List<TimeSeriesPoint> timeSeries) {
+
+    public static ConfidenceScoreResponse of(BigDecimal currentScore, List<TimeSeriesData> timeSeries) {
         return ConfidenceScoreResponse.builder()
             .currentConfidenceScore(currentScore)
             .calculatedAt(LocalDateTime.now())
             .timeSeries(timeSeries)
+            .build();
+    }
+
+    public static ConfidenceScoreResponse of(BigDecimal currentScore, List<TimeSeriesData> timeSeries, 
+                                           String driftStatus, BigDecimal alertThreshold) {
+        return ConfidenceScoreResponse.builder()
+            .currentConfidenceScore(currentScore)
+            .calculatedAt(LocalDateTime.now())
+            .timeSeries(timeSeries)
+            .modelDriftStatus(driftStatus)
+            .alertThreshold(alertThreshold)
             .build();
     }
 }

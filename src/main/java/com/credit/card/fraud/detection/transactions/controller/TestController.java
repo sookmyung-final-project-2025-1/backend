@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
@@ -44,7 +45,7 @@ public class TestController {
     public ResponseEntity<Transaction> createSampleTransaction() {
         Transaction transaction = Transaction.builder()
             .userId("USER_" + System.currentTimeMillis())
-            .amount(BigDecimal.valueOf(Math.random() * 10000).setScale(2, BigDecimal.ROUND_HALF_UP))
+            .amount(BigDecimal.valueOf(Math.random() * 10000).setScale(2, RoundingMode.HALF_UP))
             .merchant("TEST_MERCHANT")
             .merchantCategory("ONLINE_SHOPPING")
             .transactionTime(LocalDateTime.now())
