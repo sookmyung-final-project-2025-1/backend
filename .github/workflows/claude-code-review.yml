@@ -25,7 +25,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # 대용량 PR/바이너리 변경시 스킵
       - name: Skip if too many changed files
         id: sizecheck
         run: |
@@ -36,61 +35,56 @@ jobs:
       - if: steps.sizecheck.outputs.skip == 'true'
         run: echo "PR too large; skipping review." && exit 0
 
-      - name: Run Claude Code for code review
+      - name: Run Claude Code (API key mode)
         uses: anthropics/claude-code-action@main
         with:
-          anthropic_api_key: ${{secrets.CLAUDE_TOKEN}}
-          direct_prompt: |
+          anthropic_api_key: ${{ secrets.CLAUDE_TOKEN }}
+
+          prompt: |
             You are a senior software engineer reviewing code for a junior backend development team. Write in Korean.
-            
+
             First, write a brief review on the changes made. 3~5 sentences are enough. Include tables if necessary. 
-            
             Then, write a code review based on the instructions below.
-            
+
             Focus Areas
             Review ONLY for:
-            
             issue: Bugs, security vulnerabilities, or broken functionality
             suggestion: Performance problems or significant code quality issues
             question: Unclear logic that needs clarification
               
             Format Requirements
-              
             Maximum 1-2 sentences per comment
-            
             Use format: 파일명:라인번호 - [prefix:] 문제점 - 이유 설명 및 해결방안 
-            
             If no significant issues: respond with "LGTM"
             Skip minor style/formatting issues
             No explanatory text, praise, or educational content
-            
+
             Skip Entirely
-              
             Positive feedback or praise
             Minor naming conventions
             Code style preferences
             Long explanations or tutorials
             Emojis, headers, or formatting
 
-            claude_args: |
-              {
-                "model": "claude-3-7-sonnet",
-                "max_tokens": 1800
-              }
+          claude_args: |
+            {
+              "model": "claude-3-7-sonnet",
+              "max_tokens": 1800
+            }
 
-            paths: |
-              **/*.java
-              **/*.kt
-              **/*.gradle
-              **/Dockerfile
-              **/docker-compose*.yml
-              **/*.yml
-              **/*.yaml
-              src/**
+          paths: |
+            **/*.java
+            **/*.kt
+            **/*.gradle
+            **/Dockerfile
+            **/docker-compose*.yml
+            **/*.yml
+            **/*.yaml
+            src/**
 
-            ignore_paths: |
-              **/*.md
-              **/*.png
-              **/*.jpg
-              **/*.svg
-              **/build/**
+          ignore_paths: |
+            **/*.md
+            **/*.png
+            **/*.jpg
+            **/*.svg
+            **/build/**
