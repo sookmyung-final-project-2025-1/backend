@@ -70,29 +70,9 @@ services:
     depends_on:
       app:
         condition: service_healthy
-      model:
-        condition: service_healthy
     networks: [fraud-detection-network]
     restart: unless-stopped
 
-  model:
-    image: ${MODEL_IMAGE:-ghcr.io/sookmyung-final-project-2025-1/fraud-model:latest}
-    env_file:
-      - ${ENV_FILE:-.env}
-    environment:
-      GITHUB_TOKEN: ${GITHUB_TOKEN}
-      GITHUB_REPO: sookmyung-final-project-2025-1/Data
-      MODEL_VERSION: ${MODEL_VERSION:-latest}
-      MODEL_DIR: ${MODEL_DIR:-/app/models}
-    expose: ["8000"]
-    networks: [fraud-detection-network]
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').getcode()==200 else 1)"]
-      interval: 20s
-      timeout: 3s
-      retries: 5
-      start_period: 40s
 
 volumes:
   mysql_data:
