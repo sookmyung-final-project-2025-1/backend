@@ -4,6 +4,7 @@ import com.credit.card.fraud.detection.transactions.repository.FraudDetectionRes
 import com.credit.card.fraud.detection.transactions.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -26,13 +27,34 @@ public class DashboardService {
         Long uniqueUsers = transactionRepository.countUniqueUsersInTimeWindow(startTime, endTime);
         Double avgAmount = transactionRepository.averageTransactionAmountInTimeWindow(startTime, endTime);
 
-        // 처리 성능 통계
-        Double avgProcessingTime = fraudDetectionResultRepository.averageProcessingTime(startTime, endTime);
-        Double medianProcessingTime = fraudDetectionResultRepository.medianProcessingTime(startTime, endTime);
-        Double p95ProcessingTime = fraudDetectionResultRepository.p95ProcessingTime(startTime, endTime);
+        Double avgProcessingTime = null;
+        Double medianProcessingTime = null;
+        Double p95ProcessingTime = null;
+        BigDecimal avgConfidenceScore = null;
 
-        // Confidence Score
-        BigDecimal avgConfidenceScore = fraudDetectionResultRepository.averageConfidenceScore(startTime, endTime);
+        try {
+            avgProcessingTime = fraudDetectionResultRepository.averageProcessingTime(startTime, endTime);
+        } catch (Exception e) {
+            avgProcessingTime = 0.0;
+        }
+
+        try {
+            medianProcessingTime = fraudDetectionResultRepository.medianProcessingTime(startTime, endTime);
+        } catch (Exception e) {
+            medianProcessingTime = 0.0;
+        }
+
+        try {
+            p95ProcessingTime = fraudDetectionResultRepository.p95ProcessingTime(startTime, endTime);
+        } catch (Exception e) {
+            p95ProcessingTime = 0.0;
+        }
+
+        try {
+            avgConfidenceScore = fraudDetectionResultRepository.averageConfidenceScore(startTime, endTime);
+        } catch (Exception e) {
+            avgConfidenceScore = BigDecimal.ZERO;
+        }
 
         // Throughput 계산 (시간당 처리 건수)
         long hours = java.time.Duration.between(startTime, endTime).toHours();
@@ -57,38 +79,46 @@ public class DashboardService {
     }
 
     public List<Map<String, Object>> getHourlyTransactionStats(LocalDateTime startTime, LocalDateTime endTime) {
-        List<Object[]> hourlyStats = fraudDetectionResultRepository.getHourlyStats(startTime, endTime);
+        try {
+            List<Object[]> hourlyStats = fraudDetectionResultRepository.getHourlyStats(startTime, endTime);
 
-        return hourlyStats.stream()
-                .map(row -> {
-                    Map<String, Object> stat = new HashMap<>();
-                    stat.put("timestamp", row[0]); // hour
-                    stat.put("avgConfidenceScore", row[1]); // avgConfidence
-                    stat.put("totalCount", row[2]); // totalCount
-                    stat.put("avgProcessingTime", row[3]); // avgProcessingTime
-                    return stat;
-                })
-                .collect(Collectors.toList());
+            return hourlyStats.stream()
+                    .map(row -> {
+                        Map<String, Object> stat = new HashMap<>();
+                        stat.put("timestamp", row[0]);
+                        stat.put("avgConfidenceScore", row[1]);
+                        stat.put("totalCount", row[2]);
+                        stat.put("avgProcessingTime", row[3]);
+                        return stat;
+                    })
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
     }
 
     public List<Map<String, Object>> getDailyTransactionStats(LocalDateTime startTime, LocalDateTime endTime) {
-        List<Object[]> dailyStats = transactionRepository.getDailyTransactionStats(startTime, endTime);
+        try {
+            List<Object[]> dailyStats = transactionRepository.getDailyTransactionStats(startTime, endTime);
 
-        return dailyStats.stream()
-                .map(row -> {
-                    Map<String, Object> stat = new HashMap<>();
-                    stat.put("date", row[0]); // date
-                    stat.put("totalCount", row[1]); // count
-                    stat.put("fraudCount", row[2]); // fraudCount
+            return dailyStats.stream()
+                    .map(row -> {
+                        Map<String, Object> stat = new HashMap<>();
+                        stat.put("date", row[0]);
+                        stat.put("totalCount", row[1]);
+                        stat.put("fraudCount", row[2]);
 
-                    Long total = ((Number) row[1]).longValue();
-                    Long fraud = ((Number) row[2]).longValue();
-                    Double fraudRate = total > 0 ? (fraud.doubleValue() / total.doubleValue()) * 100 : 0.0;
-                    stat.put("fraudRate", fraudRate);
+                        Long total = ((Number) row[1]).longValue();
+                        Long fraud = ((Number) row[2]).longValue();
+                        Double fraudRate = total > 0 ? (fraud.doubleValue() / total.doubleValue()) * 100 : 0.0;
+                        stat.put("fraudRate", fraudRate);
 
-                    return stat;
-                })
-                .collect(Collectors.toList());
+                        return stat;
+                    })
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
     }
 
     public Map<String, Object> getRealTimeMetrics() {
@@ -112,34 +142,57 @@ public class DashboardService {
         return realTimeMetrics;
     }
 
+    @Transactional(readOnly = true)
     public List<Map<String, Object>> getTopRiskTransactions(Integer limit) {
         LocalDateTime startTime = LocalDateTime.now().minusHours(24);
-        List<com.credit.card.fraud.detection.transactions.entity.FraudDetectionResult> highRiskTransactions =
-                fraudDetectionResultRepository.findHighRiskTransactions(new BigDecimal("0.7"), startTime);
+        
+        try {
+            List<com.credit.card.fraud.detection.transactions.entity.FraudDetectionResult> highRiskTransactions =
+                    fraudDetectionResultRepository.findHighRiskTransactions(new BigDecimal("0.7"), startTime);
 
-        return highRiskTransactions.stream()
-                .limit(limit != null ? limit : 10)
-                .map(result -> {
-                    Map<String, Object> transaction = new HashMap<>();
-                    transaction.put("transactionId", result.getTransaction().getId());
-                    transaction.put("fraudScore", result.getFinalScore());
-                    transaction.put("predictionTime", result.getPredictionTime());
-                    transaction.put("userId", result.getTransaction().getUserId());
-                    transaction.put("amount", result.getTransaction().getAmount());
-                    transaction.put("merchant", result.getTransaction().getMerchant());
-                    return transaction;
-                })
-                .collect(Collectors.toList());
+            return highRiskTransactions.stream()
+                    .limit(limit != null ? limit : 10)
+                    .map(result -> {
+                        Map<String, Object> transaction = new HashMap<>();
+                        transaction.put("transactionId", result.getTransaction().getId());
+                        transaction.put("fraudScore", result.getFinalScore());
+                        transaction.put("predictionTime", result.getPredictionTime());
+                        transaction.put("userId", result.getTransaction().getUserId());
+                        transaction.put("amount", result.getTransaction().getAmount());
+                        transaction.put("merchant", result.getTransaction().getMerchant());
+                        return transaction;
+                    })
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
     }
 
     public Map<String, Object> getSystemHealth() {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime oneHourAgo = now.minusHours(1);
 
-        // 시스템 건강도 지표들
-        Double avgProcessingTime = fraudDetectionResultRepository.averageProcessingTime(oneHourAgo, now);
-        Double p95ProcessingTime = fraudDetectionResultRepository.p95ProcessingTime(oneHourAgo, now);
-        BigDecimal avgConfidence = fraudDetectionResultRepository.averageConfidenceScore(oneHourAgo, now);
+        Double avgProcessingTime = null;
+        Double p95ProcessingTime = null;
+        BigDecimal avgConfidence = null;
+
+        try {
+            avgProcessingTime = fraudDetectionResultRepository.averageProcessingTime(oneHourAgo, now);
+        } catch (Exception e) {
+            avgProcessingTime = 0.0;
+        }
+
+        try {
+            p95ProcessingTime = fraudDetectionResultRepository.p95ProcessingTime(oneHourAgo, now);
+        } catch (Exception e) {
+            p95ProcessingTime = 0.0;
+        }
+
+        try {
+            avgConfidence = fraudDetectionResultRepository.averageConfidenceScore(oneHourAgo, now);
+        } catch (Exception e) {
+            avgConfidence = BigDecimal.ZERO;
+        }
 
         // 건강도 점수 계산 (0-100)
         int healthScore = 100;

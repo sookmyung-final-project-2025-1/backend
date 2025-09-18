@@ -44,36 +44,23 @@ public interface FraudDetectionResultRepository extends JpaRepository<FraudDetec
     Double averageProcessingTime(@Param("startTime") LocalDateTime startTime,
                                  @Param("endTime") LocalDateTime endTime);
 
-    @Query(value = "SELECT " +
-            "CASE " +
-            "  WHEN COUNT(*) = 0 THEN NULL " +
-            "  ELSE (" +
-            "    SELECT processing_time_ms " +
-            "    FROM fraud_detection_results " +
-            "    WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
-            "    ORDER BY processing_time_ms " +
-            "    LIMIT 1 OFFSET GREATEST(0, FLOOR((SELECT COUNT(*) FROM fraud_detection_results WHERE prediction_time >= :startTime AND prediction_time <= :endTime)/2))" +
-            "  ) " +
-            "END " +
-            "FROM fraud_detection_results " +
-            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime",
+    @Query(value = "SELECT AVG(processing_time_ms) FROM (" +
+            "SELECT processing_time_ms FROM fraud_detection_results " +
+            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
+            "AND processing_time_ms IS NOT NULL " +
+            "ORDER BY processing_time_ms " +
+            "LIMIT 2 - (SELECT COUNT(*) FROM fraud_detection_results WHERE prediction_time >= :startTime AND prediction_time <= :endTime AND processing_time_ms IS NOT NULL) % 2 " +
+            "OFFSET (SELECT (COUNT(*) - 1) DIV 2 FROM fraud_detection_results WHERE prediction_time >= :startTime AND prediction_time <= :endTime AND processing_time_ms IS NOT NULL)" +
+            ") AS median_calc",
             nativeQuery = true)
     Double medianProcessingTime(@Param("startTime") LocalDateTime startTime,
                                 @Param("endTime") LocalDateTime endTime);
 
-    @Query(value = "SELECT " +
-            "CASE " +
-            "  WHEN COUNT(*) = 0 THEN NULL " +
-            "  ELSE (" +
-            "    SELECT processing_time_ms " +
-            "    FROM fraud_detection_results " +
-            "    WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
-            "    ORDER BY processing_time_ms " +
-            "    LIMIT 1 OFFSET GREATEST(0, FLOOR((SELECT COUNT(*) FROM fraud_detection_results WHERE prediction_time >= :startTime AND prediction_time <= :endTime) * 0.95))" +
-            "  ) " +
-            "END " +
-            "FROM fraud_detection_results " +
-            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime",
+    @Query(value = "SELECT processing_time_ms FROM fraud_detection_results " +
+            "WHERE prediction_time >= :startTime AND prediction_time <= :endTime " +
+            "AND processing_time_ms IS NOT NULL " +
+            "ORDER BY processing_time_ms DESC " +
+            "LIMIT 1 OFFSET (SELECT FLOOR(COUNT(*) * 0.05) FROM fraud_detection_results WHERE prediction_time >= :startTime AND prediction_time <= :endTime AND processing_time_ms IS NOT NULL)",
             nativeQuery = true)
     Double p95ProcessingTime(@Param("startTime") LocalDateTime startTime,
                              @Param("endTime") LocalDateTime endTime);
@@ -93,7 +80,7 @@ public interface FraudDetectionResultRepository extends JpaRepository<FraudDetec
     List<FraudDetectionResult> findTop1000ByOrderByPredictionTimeDesc();
 
     @Query("SELECT fdr FROM FraudDetectionResult fdr " +
-            "JOIN fdr.transaction t " +
+            "JOIN FETCH fdr.transaction t " +
             "WHERE fdr.finalScore >= :threshold " +
             "AND fdr.predictionTime >= :startTime " +
             "ORDER BY fdr.finalScore DESC")
