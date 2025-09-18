@@ -59,4 +59,10 @@ public interface UserReportRepository extends JpaRepository<UserReport, Long> {
 
     @Query("SELECT COUNT(ur) FROM UserReport ur WHERE ur.status = :underReviewStatus AND ur.createdAt BETWEEN :startDate AND :endDate")
     Long countUnderReviewReportsInPeriod(@Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate, @Param("underReviewStatus") UserReport.ReportStatus underReviewStatus);
+
+    @Query("SELECT COUNT(ur) FROM UserReport ur " +
+        "WHERE ur.createdAt >= :startTime AND ur.createdAt <= :endTime " +
+        "AND ur.status = 'APPROVED' AND ur.isFraudConfirmed = true")
+    Long countConfirmedFraud(@Param("startTime") LocalDateTime startTime,
+                            @Param("endTime") LocalDateTime endTime);
 }

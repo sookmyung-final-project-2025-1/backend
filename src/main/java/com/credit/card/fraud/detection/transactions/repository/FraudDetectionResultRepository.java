@@ -91,4 +91,11 @@ public interface FraudDetectionResultRepository extends JpaRepository<FraudDetec
             "ORDER BY fdr.finalScore DESC")
     List<FraudDetectionResult> findHighRiskTransactions(@Param("threshold") BigDecimal threshold,
                                                         @Param("startTime") LocalDateTime startTime);
+
+        @Query("SELECT COUNT(fdr) FROM FraudDetectionResult fdr " +
+        "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime " +
+        "AND fdr.finalPrediction = true")
+        Long countFraudPredictions(@Param("startTime") LocalDateTime startTime,
+                                @Param("endTime") LocalDateTime endTime);
+
 }

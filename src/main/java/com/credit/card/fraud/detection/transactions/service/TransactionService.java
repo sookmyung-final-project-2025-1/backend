@@ -13,6 +13,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,22 +38,28 @@ public class TransactionService {
     private final FraudDetectionResultRepository fraudDetectionResultRepository;
     private final UserReportRepository userReportRepository;
     private final EnsembleModelService ensembleModelService;
-    private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
+    
+    @Autowired(required = false)
+    private SimpMessagingTemplate messagingTemplate;
     
     @Transactional
     public Transaction processAndDetectFraud(Transaction transaction) {
-        // 1. 트랜잭션 저장
-        Transaction savedTransaction = transactionRepository.save(transaction);
+        if (transaction == null) {
+            throw new IllegalArgumentException("Transaction cannot be null");
+        }
         
-        // 2. 사기 탐지 실행
         try {
+            // 1. 트랜잭션 저장
+            Transaction savedTransaction = transactionRepository.save(transaction);
+            
+            // 2. 사기 탐지 실행
             FraudDetectionResult detectionResult = detectFraud(savedTransaction);
             
             // 3. 탐지 결과에 따라 트랜잭션 상태 업데이트
             if (detectionResult.getFinalPrediction()) {
                 savedTransaction.markAsFraud();
-                transactionRepository.save(savedTransaction);
+                savedTransaction = transactionRepository.save(savedTransaction);
             }
             
             // 4. 고위험 거래 실시간 알림
@@ -66,45 +73,63 @@ public class TransactionService {
             log.debug("Transaction {} processed with fraud score: {}", 
                 savedTransaction.getId(), detectionResult.getFinalScore());
             
+            return savedTransaction;
+            
         } catch (Exception e) {
             log.error("Error during fraud detection for transaction {}: {}", 
-                savedTransaction.getId(), e.getMessage());
+                transaction.getId(), e.getMessage(), e);
+            throw new RuntimeException("Failed to process transaction: " + e.getMessage(), e);
         }
-        
-        return savedTransaction;
     }
     
     @Transactional
     public FraudDetectionResult detectFraud(Transaction transaction) {
-        // 모델 예측 요청 생성
-        ModelPredictionRequest request = buildPredictionRequest(transaction);
-        
-        // 앙상블 모델로 예측 실행
-        ModelPredictionResponse response = ensembleModelService.predict(request);
-        
-        if (!response.getSuccess()) {
-            throw new RuntimeException("Model prediction failed: " + response.getErrorMessage());
+        if (transaction == null) {
+            throw new IllegalArgumentException("Transaction cannot be null");
         }
         
-        // 예측 결과를 DB에 저장
-        FraudDetectionResult detectionResult = FraudDetectionResult.builder()
-            .transaction(transaction)
-            .lgbmScore(response.getLgbmScore())
-            .xgboostScore(response.getXgboostScore())
-            .catboostScore(response.getCatboostScore())
-            .finalScore(response.getFinalScore())
-            .finalPrediction(response.getFinalPrediction())
-            .confidenceScore(response.getConfidenceScore())
-            .lgbmWeight(response.getLgbmWeight())
-            .xgboostWeight(response.getXgboostWeight())
-            .catboostWeight(response.getCatboostWeight())
-            .threshold(response.getThreshold())
-            .predictionTime(response.getPredictionTime())
-            .processingTimeMs(response.getProcessingTimeMs())
-            .modelVersion(response.getModelVersion())
-            .build();
-        
-        // 피처 중요도와 어텐션 스코어를 JSON으로 저장
+        try {
+            // 모델 예측 요청 생성
+            ModelPredictionRequest request = buildPredictionRequest(transaction);
+            
+            // 앙상블 모델로 예측 실행
+            ModelPredictionResponse response = ensembleModelService.predict(request);
+            
+            if (!response.getSuccess()) {
+                throw new RuntimeException("Model prediction failed: " + response.getErrorMessage());
+            }
+            
+            // 예측 결과를 DB에 저장
+            FraudDetectionResult detectionResult = FraudDetectionResult.builder()
+                .transaction(transaction)
+                .lgbmScore(response.getLgbmScore())
+                .xgboostScore(response.getXgboostScore())
+                .catboostScore(response.getCatboostScore())
+                .finalScore(response.getFinalScore())
+                .finalPrediction(response.getFinalPrediction())
+                .confidenceScore(response.getConfidenceScore())
+                .lgbmWeight(response.getLgbmWeight())
+                .xgboostWeight(response.getXgboostWeight())
+                .catboostWeight(response.getCatboostWeight())
+                .threshold(response.getThreshold())
+                .predictionTime(response.getPredictionTime())
+                .processingTimeMs(response.getProcessingTimeMs())
+                .modelVersion(response.getModelVersion())
+                .build();
+            
+            // 피처 중요도와 어텐션 스코어를 JSON으로 저장
+            serializeModelOutputs(response, detectionResult);
+            
+            return fraudDetectionResultRepository.save(detectionResult);
+            
+        } catch (Exception e) {
+            log.error("Error detecting fraud for transaction {}: {}", 
+                transaction.getId(), e.getMessage(), e);
+            throw new RuntimeException("Failed to detect fraud: " + e.getMessage(), e);
+        }
+    }
+    
+    private void serializeModelOutputs(ModelPredictionResponse response, FraudDetectionResult detectionResult) {
         try {
             if (response.getFeatureImportance() != null) {
                 detectionResult.setFeatureImportance(
@@ -115,67 +140,73 @@ public class TransactionService {
                     objectMapper.writeValueAsString(response.getAttentionScores()));
             }
         } catch (JsonProcessingException e) {
-            log.warn("Failed to serialize feature importance or attention scores: {}", e.getMessage());
+            log.warn("Failed to serialize feature importance or attention scores for transaction {}: {}", 
+                detectionResult.getTransaction().getId(), e.getMessage());
         }
-        
-        return fraudDetectionResultRepository.save(detectionResult);
     }
     
     private ModelPredictionRequest buildPredictionRequest(Transaction transaction) {
-        // IEEE 데이터셋에서 실제 피처값 추출 또는 시뮬레이션
-        Map<String, String> ieeeData = parseIEEEFeaturesFromTransaction(transaction);
+        try {
+            // IEEE 데이터셋에서 실제 피처값 추출 또는 시뮬레이션
+            Map<String, String> ieeeData = parseIEEEFeaturesFromTransaction(transaction);
 
-        return ModelPredictionRequest.builder()
-            // IEEE 기본 거래 정보
-            .transactionId(transaction.getId())
-            .transactionDT(new BigDecimal(ieeeData.getOrDefault("TransactionDT", "0")))
-            .amount(transaction.getAmount())
+            return ModelPredictionRequest.builder()
+                // IEEE 기본 거래 정보
+                .transactionId(transaction.getId())
+                .transactionDT(new BigDecimal(ieeeData.getOrDefault("TransactionDT", "0")))
+                .amount(transaction.getAmount())
 
-            // IEEE 상품 및 결제 정보
-            .productCode(ieeeData.getOrDefault("ProductCD", "W"))
-            .card1(ieeeData.getOrDefault("card1", "13553"))
-            .card2(ieeeData.getOrDefault("card2", "150.0"))
-            .card3(ieeeData.getOrDefault("card3", "150.0"))
-            .card4(parseDecimal(ieeeData.get("card4")))
-            .card5(ieeeData.getOrDefault("card5", "226"))
-            .card6(parseDecimal(ieeeData.get("card6")))
+                // IEEE 상품 및 결제 정보
+                .productCode(ieeeData.getOrDefault("ProductCD", "W"))
+                .card1(ieeeData.getOrDefault("card1", "13553"))
+                .card2(ieeeData.getOrDefault("card2", "150.0"))
+                .card3(ieeeData.getOrDefault("card3", "150.0"))
+                .card4(parseDecimal(ieeeData.get("card4")))
+                .card5(ieeeData.getOrDefault("card5", "226"))
+                .card6(parseDecimal(ieeeData.get("card6")))
 
-            // IEEE 주소 및 거리 정보
-            .addr1(parseDecimal(ieeeData.get("addr1")))
-            .addr2(parseDecimal(ieeeData.get("addr2")))
-            .dist1(parseDecimal(ieeeData.get("dist1")))
-            .dist2(parseDecimal(ieeeData.get("dist2")))
+                // IEEE 주소 및 거리 정보
+                .addr1(parseDecimal(ieeeData.get("addr1")))
+                .addr2(parseDecimal(ieeeData.get("addr2")))
+                .dist1(parseDecimal(ieeeData.get("dist1")))
+                .dist2(parseDecimal(ieeeData.get("dist2")))
 
-            // IEEE 이메일 도메인
-            .purchaserEmailDomain(ieeeData.getOrDefault("P_emaildomain", "gmail.com"))
-            .recipientEmailDomain(ieeeData.get("R_emaildomain"))
+                // IEEE 이메일 도메인
+                .purchaserEmailDomain(ieeeData.getOrDefault("P_emaildomain", "gmail.com"))
+                .recipientEmailDomain(ieeeData.get("R_emaildomain"))
 
-            // IEEE 피처 맵들
-            .countingFeatures(generateCountingFeatures(ieeeData))
-            .timeDeltas(generateTimeDeltas(ieeeData))
-            .matchFeatures(generateMatchFeatures(ieeeData))
-            .vestaFeatures(generateVestaFeatures(ieeeData))
-            .identityFeatures(generateIdentityFeatures(ieeeData))
+                // IEEE 피처 맵들
+                .countingFeatures(generateCountingFeatures(ieeeData))
+                .timeDeltas(generateTimeDeltas(ieeeData))
+                .matchFeatures(generateMatchFeatures(ieeeData))
+                .vestaFeatures(generateVestaFeatures(ieeeData))
+                .identityFeatures(generateIdentityFeatures(ieeeData))
 
-            // IEEE 디바이스 정보
-            .deviceType(ieeeData.getOrDefault("DeviceType", "desktop"))
-            .deviceInfo(ieeeData.getOrDefault("DeviceInfo", "Windows"))
+                // IEEE 디바이스 정보
+                .deviceType(ieeeData.getOrDefault("DeviceType", "desktop"))
+                .deviceInfo(ieeeData.getOrDefault("DeviceInfo", "Windows"))
 
-            // 백엔드 생성 필드 (IEEE에서 파생)
-            .userId(generateUserIdFromTransaction(transaction))
-            .merchant(generateMerchantFromProduct(ieeeData.getOrDefault("ProductCD", "W")))
-            .merchantCategory(generateCategoryFromProduct(ieeeData.getOrDefault("ProductCD", "W")))
-            .transactionTime(transaction.getTransactionTime())
-            .latitude(transaction.getLatitude())
-            .longitude(transaction.getLongitude())
-            .deviceFingerprint(generateDeviceFingerprint(ieeeData))
-            .ipAddress(generateIpFromIdentity(ieeeData))
+                // 백엔드 생성 필드 (IEEE에서 파생)
+                .userId(generateUserIdFromTransaction(transaction))
+                .merchant(generateMerchantFromProduct(ieeeData.getOrDefault("ProductCD", "W")))
+                .merchantCategory(generateCategoryFromProduct(ieeeData.getOrDefault("ProductCD", "W")))
+                .transactionTime(transaction.getTransactionTime())
+                .latitude(transaction.getLatitude())
+                .longitude(transaction.getLongitude())
+                .deviceFingerprint(generateDeviceFingerprint(ieeeData))
+                .ipAddress(generateIpFromIdentity(ieeeData))
 
-
-            // 모델 설정
-            .modelWeights(ensembleModelService.getCurrentWeights())
-            .threshold(ensembleModelService.getCurrentThreshold())
-            .build();
+                // 모델 설정
+                .modelWeights(ensembleModelService.getCurrentWeights())
+                .threshold(ensembleModelService.getCurrentThreshold())
+                .modelVersion("v1.2.3")
+                .build();
+                
+        } catch (Exception e) {
+            log.error("Error building prediction request for transaction {}: {}", 
+                transaction.getId(), e.getMessage(), e);
+            throw new RuntimeException("Failed to build prediction request: " + e.getMessage(), e);
+        }
     }
     
     // IEEE 데이터 파싱 및 생성 메서드들
@@ -183,8 +214,9 @@ public class TransactionService {
         Map<String, String> ieeeData = new HashMap<>();
 
         // Transaction.anonymizedFeatures에서 IEEE 데이터 파싱
-        if (transaction.getAnonymizedFeatures() != null) {
+        if (transaction.getAnonymizedFeatures() != null && !transaction.getAnonymizedFeatures().trim().isEmpty()) {
             try {
+                @SuppressWarnings("unchecked")
                 Map<String, Object> features = objectMapper.readValue(
                     transaction.getAnonymizedFeatures(), Map.class);
 
@@ -201,12 +233,17 @@ public class TransactionService {
         }
 
         // 기본값 설정 (실제 환경에서는 IEEE CSV에서 읽어옴)
+        setDefaultIEEEValues(ieeeData);
+
+        return ieeeData;
+    }
+
+    private void setDefaultIEEEValues(Map<String, String> ieeeData) {
         ieeeData.putIfAbsent("TransactionDT", String.valueOf(System.currentTimeMillis() / 1000));
         ieeeData.putIfAbsent("ProductCD", getRandomProductCode());
         ieeeData.putIfAbsent("card1", getRandomCard1());
         ieeeData.putIfAbsent("DeviceType", getRandomDeviceType());
-
-        return ieeeData;
+        ieeeData.putIfAbsent("DeviceInfo", getRandomDeviceInfo());
     }
 
     private BigDecimal parseDecimal(String value) {
@@ -216,6 +253,7 @@ public class TransactionService {
         try {
             return new BigDecimal(value);
         } catch (NumberFormatException e) {
+            log.debug("Failed to parse decimal value: {}", value);
             return null;
         }
     }
@@ -228,7 +266,10 @@ public class TransactionService {
             String key = "C" + i;
             String value = ieeeData.get(key);
             if (value != null) {
-                features.put(key, parseDecimal(value));
+                BigDecimal parsed = parseDecimal(value);
+                if (parsed != null) {
+                    features.put(key, parsed);
+                }
             } else {
                 // 시뮬레이션된 값
                 features.put(key, BigDecimal.valueOf(random.nextDouble() * 100)
@@ -247,8 +288,11 @@ public class TransactionService {
             String key = "D" + i;
             String value = ieeeData.get(key);
             if (value != null) {
-                features.put(key, parseDecimal(value));
-            } else {
+                BigDecimal parsed = parseDecimal(value);
+                if (parsed != null) {
+                    features.put(key, parsed);
+                }
+            } else if (random.nextDouble() > 0.3) { // 70% 확률로 값 존재
                 // 시뮬레이션된 시간 델타 (일 단위)
                 features.put(key, BigDecimal.valueOf(random.nextDouble() * 365)
                     .setScale(2, RoundingMode.HALF_UP));
@@ -265,9 +309,9 @@ public class TransactionService {
         for (int i = 1; i <= 9; i++) {
             String key = "M" + i;
             String value = ieeeData.get(key);
-            if (value != null) {
+            if (value != null && (value.equals("T") || value.equals("F"))) {
                 features.put(key, value);
-            } else {
+            } else if (random.nextDouble() > 0.2) { // 80% 확률로 값 존재
                 // 시뮬레이션된 매치 값
                 features.put(key, random.nextBoolean() ? "T" : "F");
             }
@@ -288,8 +332,11 @@ public class TransactionService {
             String key = "V" + i;
             String value = ieeeData.get(key);
             if (value != null) {
-                features.put(key, parseDecimal(value));
-            } else {
+                BigDecimal parsed = parseDecimal(value);
+                if (parsed != null) {
+                    features.put(key, parsed);
+                }
+            } else if (random.nextDouble() > 0.4) { // 60% 확률로 값 존재
                 // 시뮬레이션된 Vesta 피처
                 features.put(key, BigDecimal.valueOf(random.nextDouble() * 10)
                     .setScale(4, RoundingMode.HALF_UP));
@@ -307,8 +354,11 @@ public class TransactionService {
             String key = "id_" + String.format("%02d", i);
             String value = ieeeData.get(key);
             if (value != null) {
-                features.put(key, parseDecimal(value));
-            } else if (i <= 20) { // 주요한 identity 피처들만
+                BigDecimal parsed = parseDecimal(value);
+                if (parsed != null) {
+                    features.put(key, parsed);
+                }
+            } else if (i <= 20 && random.nextDouble() > 0.5) { // 주요한 identity 피처들만, 50% 확률
                 // 시뮬레이션된 identity 피처
                 features.put(key, BigDecimal.valueOf(random.nextDouble() * 1000)
                     .setScale(2, RoundingMode.HALF_UP));
@@ -326,7 +376,9 @@ public class TransactionService {
 
     private String generateMerchantFromProduct(String productCode) {
         // ProductCD 기반으로 가맹점명 생성
-        switch (productCode) {
+        if (productCode == null) return "Unknown_Merchant";
+        
+        switch (productCode.toUpperCase()) {
             case "W": return "WorldWide_Store";
             case "C": return "Card_Services";
             case "H": return "Home_Shopping";
@@ -338,7 +390,9 @@ public class TransactionService {
 
     private String generateCategoryFromProduct(String productCode) {
         // ProductCD 기반으로 카테고리 생성
-        switch (productCode) {
+        if (productCode == null) return "OTHER";
+        
+        switch (productCode.toUpperCase()) {
             case "W": return "ONLINE_RETAIL";
             case "C": return "FINANCIAL_SERVICES";
             case "H": return "HOME_GARDEN";
@@ -358,11 +412,11 @@ public class TransactionService {
         // Identity 피처 기반으로 IP 생성 (시뮬레이션)
         String id_31 = ieeeData.get("id_31");
         if (id_31 != null) {
-            return "192.168." + (id_31.hashCode() % 256) + "." + (id_31.hashCode() / 256 % 256);
+            int hashCode = Math.abs(id_31.hashCode());
+            return "192.168." + (hashCode % 256) + "." + ((hashCode / 256) % 256);
         }
         return "192.168.1." + (random.nextInt(254) + 1);
     }
-
 
     // 랜덤 값 생성 헬퍼 메서드들
     private String getRandomProductCode() {
@@ -378,9 +432,18 @@ public class TransactionService {
         String[] types = {"desktop", "mobile"};
         return types[random.nextInt(types.length)];
     }
+
+    private String getRandomDeviceInfo() {
+        String[] infos = {"Windows", "iOS Device", "Android", "macOS", "Linux"};
+        return infos[random.nextInt(infos.length)];
+    }
     
     @Transactional
     public UserReport reportFraud(Long transactionId, String reportedBy, String reason, String description) {
+        if (transactionId == null || reportedBy == null || reason == null) {
+            throw new IllegalArgumentException("Transaction ID, reporter, and reason cannot be null");
+        }
+        
         Optional<Transaction> transactionOpt = transactionRepository.findById(transactionId);
         if (transactionOpt.isEmpty()) {
             throw new IllegalArgumentException("Transaction not found: " + transactionId);
@@ -405,6 +468,10 @@ public class TransactionService {
     
     @Transactional
     public void approveReport(Long reportId, String reviewedBy, String comment, Boolean isFraud) {
+        if (reportId == null || reviewedBy == null) {
+            throw new IllegalArgumentException("Report ID and reviewer cannot be null");
+        }
+        
         Optional<UserReport> reportOpt = userReportRepository.findById(reportId);
         if (reportOpt.isEmpty()) {
             throw new IllegalArgumentException("Report not found: " + reportId);
@@ -427,53 +494,101 @@ public class TransactionService {
         // 현재는 시뮬레이션만 수행
         log.info("Model update triggered for gold label on transaction {}", transaction.getId());
         
+        // 트랜잭션에 골드 라벨 설정
+        transaction.setGoldLabel(transaction.getIsFraud());
+        transactionRepository.save(transaction);
+        
         // 시뮬레이션된 confidence score 변화 알림
         sendModelUpdateNotification(transaction);
     }
     
     private void sendHighRiskAlert(Transaction transaction, FraudDetectionResult detectionResult) {
-        Map<String, Object> alert = new HashMap<>();
-        alert.put("type", "HIGH_RISK_TRANSACTION");
-        alert.put("transactionId", transaction.getId());
-        alert.put("userId", transaction.getUserId());
-        alert.put("amount", transaction.getAmount());
-        alert.put("merchant", transaction.getMerchant());
-        alert.put("fraudScore", detectionResult.getFinalScore());
-        alert.put("timestamp", LocalDateTime.now());
+        if (messagingTemplate == null) {
+            log.debug("WebSocket messaging not available, skipping high risk alert");
+            return;
+        }
         
-        messagingTemplate.convertAndSend("/topic/alerts", alert);
+        try {
+            Map<String, Object> alert = new HashMap<>();
+            alert.put("type", "HIGH_RISK_TRANSACTION");
+            alert.put("transactionId", transaction.getId());
+            alert.put("userId", transaction.getUserId());
+            alert.put("amount", transaction.getAmount());
+            alert.put("merchant", transaction.getMerchant());
+            alert.put("fraudScore", detectionResult.getFinalScore());
+            alert.put("timestamp", LocalDateTime.now());
+            
+            messagingTemplate.convertAndSend("/topic/alerts", alert);
+            log.debug("High risk alert sent for transaction {}", transaction.getId());
+        } catch (Exception e) {
+            log.warn("Failed to send high risk alert for transaction {}: {}", 
+                transaction.getId(), e.getMessage());
+        }
     }
     
     private void sendRealtimeUpdate(Transaction transaction, FraudDetectionResult detectionResult) {
-        Map<String, Object> update = new HashMap<>();
-        update.put("type", "TRANSACTION_PROCESSED");
-        update.put("transaction", transaction);
-        update.put("detectionResult", detectionResult);
-        update.put("timestamp", LocalDateTime.now());
+        if (messagingTemplate == null) {
+            log.debug("WebSocket messaging not available, skipping realtime update");
+            return;
+        }
         
-        messagingTemplate.convertAndSend("/topic/transactions", update);
+        try {
+            Map<String, Object> update = new HashMap<>();
+            update.put("type", "TRANSACTION_PROCESSED");
+            update.put("transaction", transaction);
+            update.put("detectionResult", detectionResult);
+            update.put("timestamp", LocalDateTime.now());
+            
+            messagingTemplate.convertAndSend("/topic/transactions", update);
+            log.debug("Realtime update sent for transaction {}", transaction.getId());
+        } catch (Exception e) {
+            log.warn("Failed to send realtime update for transaction {}: {}", 
+                transaction.getId(), e.getMessage());
+        }
     }
     
     private void sendReportNotification(UserReport report) {
-        Map<String, Object> notification = new HashMap<>();
-        notification.put("type", "NEW_FRAUD_REPORT");
-        notification.put("reportId", report.getId());
-        notification.put("transactionId", report.getTransaction().getId());
-        notification.put("reportedBy", report.getReportedBy());
-        notification.put("reason", report.getReason());
-        notification.put("timestamp", LocalDateTime.now());
+        if (messagingTemplate == null) {
+            log.debug("WebSocket messaging not available, skipping report notification");
+            return;
+        }
         
-        messagingTemplate.convertAndSend("/topic/admin/reports", notification);
+        try {
+            Map<String, Object> notification = new HashMap<>();
+            notification.put("type", "NEW_FRAUD_REPORT");
+            notification.put("reportId", report.getId());
+            notification.put("transactionId", report.getTransaction().getId());
+            notification.put("reportedBy", report.getReportedBy());
+            notification.put("reason", report.getReason());
+            notification.put("timestamp", LocalDateTime.now());
+            
+            messagingTemplate.convertAndSend("/topic/admin/reports", notification);
+            log.debug("Report notification sent for report {}", report.getId());
+        } catch (Exception e) {
+            log.warn("Failed to send report notification for report {}: {}", 
+                report.getId(), e.getMessage());
+        }
     }
     
     private void sendModelUpdateNotification(Transaction transaction) {
-        Map<String, Object> notification = new HashMap<>();
-        notification.put("type", "MODEL_UPDATED");
-        notification.put("transactionId", transaction.getId());
-        notification.put("message", "Model updated with new gold label");
-        notification.put("timestamp", LocalDateTime.now());
+        if (messagingTemplate == null) {
+            log.debug("WebSocket messaging not available, skipping model update notification");
+            return;
+        }
         
-        messagingTemplate.convertAndSend("/topic/model-updates", notification);
+        try {
+            Map<String, Object> notification = new HashMap<>();
+            notification.put("type", "MODEL_UPDATED");
+            notification.put("transactionId", transaction.getId());
+            notification.put("message", "Model updated with new gold label");
+            notification.put("timestamp", LocalDateTime.now());
+            
+            messagingTemplate.convertAndSend("/topic/model-updates", notification);
+            log.debug("Model update notification sent for transaction {}", transaction.getId());
+        } catch (Exception e) {
+            log.warn("Failed to send model update notification for transaction {}: {}", 
+                transaction.getId(), e.getMessage());
+        }
     }
     
     public List<Transaction> getTransactionsWithFilters(
@@ -482,13 +597,28 @@ public class TransactionService {
             LocalDateTime startTime, LocalDateTime endTime,
             org.springframework.data.domain.Pageable pageable) {
         
-        return transactionRepository.findWithFilters(
-            userId, merchant, category, minAmount, maxAmount, isFraud,
-            startTime, endTime, pageable
-        ).getContent();
+        try {
+            return transactionRepository.findWithFilters(
+                userId, merchant, category, minAmount, maxAmount, isFraud,
+                startTime, endTime, pageable
+            ).getContent();
+        } catch (Exception e) {
+            log.error("Error retrieving transactions with filters: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve transactions: " + e.getMessage(), e);
+        }
     }
     
     public Optional<FraudDetectionResult> getFraudDetectionResult(Long transactionId) {
-        return fraudDetectionResultRepository.findByTransaction_Id(transactionId);
+        if (transactionId == null) {
+            throw new IllegalArgumentException("Transaction ID cannot be null");
+        }
+        
+        try {
+            return fraudDetectionResultRepository.findByTransaction_Id(transactionId);
+        } catch (Exception e) {
+            log.error("Error retrieving fraud detection result for transaction {}: {}", 
+                transactionId, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve fraud detection result: " + e.getMessage(), e);
+        }
     }
 }

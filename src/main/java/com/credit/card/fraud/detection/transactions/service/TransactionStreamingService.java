@@ -2,9 +2,9 @@ package com.credit.card.fraud.detection.transactions.service;
 
 import com.credit.card.fraud.detection.transactions.dto.StreamingConfig;
 import com.credit.card.fraud.detection.transactions.entity.Transaction;
-import com.credit.card.fraud.detection.transactions.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -27,9 +27,18 @@ import java.util.concurrent.atomic.AtomicReference;
 public class TransactionStreamingService {
     
     private final TransactionService transactionService;
-    private final SimpMessagingTemplate messagingTemplate;
     
-    private final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(2);
+    // 웹소켓 메시징 템플릿 (선택적 의존성)
+    @Autowired(required = false)
+    private SimpMessagingTemplate messagingTemplate;
+    
+    private final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(2, 
+        r -> {
+            Thread t = new Thread(r, "transaction-streaming");
+            t.setDaemon(true);
+            return t;
+        });
+    
     private final AtomicReference<StreamingConfig> currentConfig = new AtomicReference<>();
     private final AtomicReference<LocalDateTime> currentVirtualTime = new AtomicReference<>();
     private final AtomicBoolean isStreaming = new AtomicBoolean(false);
@@ -61,42 +70,56 @@ public class TransactionStreamingService {
     
     @Async
     public void startStreaming(StreamingConfig config) {
+        if (config == null) {
+            throw new IllegalArgumentException("Streaming config cannot be null");
+        }
+        
         if (isStreaming.get()) {
             log.warn("Streaming is already running. Stop current streaming first.");
             return;
         }
         
-        currentConfig.set(config);
-        isStreaming.set(true);
-        
-        // 시작 시간 설정
-        LocalDateTime startTime = config.getMode() == StreamingConfig.StreamingMode.REALTIME 
-            ? DEFAULT_START_TIME 
-            : config.getStartTime();
-        
-        currentVirtualTime.set(startTime);
-        
-        log.info("Starting transaction streaming - Mode: {}, Speed: {}x, Start: {}", 
-            config.getMode(), config.getSpeedMultiplier(), startTime);
-        
-        updateStreamingStatus();
-        
-        // 스케줄러로 주기적 실행
-        scheduler.scheduleAtFixedRate(
-            this::processNextBatch, 
-            0, 
-            config.getAdjustedIntervalMs(), 
-            TimeUnit.MILLISECONDS
-        );
+        try {
+            currentConfig.set(config);
+            isStreaming.set(true);
+            
+            // 시작 시간 설정
+            LocalDateTime startTime = config.getMode() == StreamingConfig.StreamingMode.REALTIME 
+                ? DEFAULT_START_TIME 
+                : config.getStartTime();
+            
+            currentVirtualTime.set(startTime);
+            
+            log.info("Starting transaction streaming - Mode: {}, Speed: {}x, Start: {}", 
+                config.getMode(), config.getSpeedMultiplier(), startTime);
+            
+            updateStreamingStatus();
+            
+            // 스케줄러로 주기적 실행
+            scheduler.scheduleAtFixedRate(
+                this::processNextBatch, 
+                0, 
+                config.getAdjustedIntervalMs(), 
+                TimeUnit.MILLISECONDS
+            );
+        } catch (Exception e) {
+            log.error("Failed to start streaming: {}", e.getMessage(), e);
+            isStreaming.set(false);
+            throw new RuntimeException("Failed to start streaming: " + e.getMessage(), e);
+        }
     }
     
     private void processNextBatch() {
-        if (!isStreaming.get() || currentConfig.get().getPaused()) {
+        if (!isStreaming.get()) {
+            return;
+        }
+        
+        StreamingConfig config = currentConfig.get();
+        if (config == null || config.getPaused()) {
             return;
         }
         
         try {
-            StreamingConfig config = currentConfig.get();
             LocalDateTime virtualTime = currentVirtualTime.get();
             
             // 종료 조건 체크
@@ -132,36 +155,45 @@ public class TransactionStreamingService {
     }
     
     private List<Transaction> generateTransactionsForTimeWindow(LocalDateTime startTime, LocalDateTime endTime) {
+        if (startTime == null || endTime == null) {
+            return Collections.emptyList();
+        }
+        
         // 실제 운영 환경에서는 IEEE 데이터셋에서 해당 시간대 데이터를 조회
         // 2017~2019 데이터를 "현재처럼" 보이게 시간축 이동하여 실시간 스트리밍 시뮬레이션
 
         List<Transaction> transactions = new ArrayList<>();
         Random random = new Random();
 
-        // 시간대별 트랜잭션 패턴 시뮬레이션 (현실적인 패턴)
-        int baseCount = getBaseTransactionCountForHour(startTime.getHour());
-        int transactionCount = (int) (baseCount * (0.8 + random.nextDouble() * 0.4)); // ±20% 변동
+        try {
+            // 시간대별 트랜잭션 패턴 시뮬레이션 (현실적인 패턴)
+            int baseCount = getBaseTransactionCountForHour(startTime.getHour());
+            int transactionCount = Math.max(0, (int) (baseCount * (0.8 + random.nextDouble() * 0.4))); // ±20% 변동
 
-        for (int i = 0; i < transactionCount; i++) {
-            LocalDateTime transactionTime = startTime.plusMinutes(random.nextInt(60));
+            for (int i = 0; i < transactionCount; i++) {
+                LocalDateTime transactionTime = startTime.plusMinutes(random.nextInt(60));
 
-            // IEEE 데이터셋 스타일의 트랜잭션 생성
-            Transaction transaction = Transaction.builder()
-                .userId("USER_" + (10000 + random.nextInt(90000)))
-                .amount(generateRealisticAmount(random))
-                .merchant(generateMerchantFromProduct(getRandomProductCode()))
-                .merchantCategory(getRandomMerchantCategory())
-                .transactionTime(transactionTime)
-                .virtualTime(transactionTime) // 시연용이므로 동일하게 설정
-                .latitude(generateRandomLatitude(random))
-                .longitude(generateRandomLongitude(random))
-                .deviceFingerprint(generateRandomDeviceFingerprint(random))
-                .ipAddress(generateRandomIP())
-                .externalTransactionId(UUID.randomUUID().toString())
-                .anonymizedFeatures(generateIEEEAnonymizedFeatures(random))
-                .build();
+                // IEEE 데이터셋 스타일의 트랜잭션 생성
+                Transaction transaction = Transaction.builder()
+                    .userId("USER_" + (10000 + random.nextInt(90000)))
+                    .amount(generateRealisticAmount(random))
+                    .merchant(generateMerchantFromProduct(getRandomProductCode()))
+                    .merchantCategory(getRandomMerchantCategory())
+                    .transactionTime(transactionTime)
+                    .virtualTime(transactionTime) // 시연용이므로 동일하게 설정
+                    .latitude(generateRandomLatitude(random))
+                    .longitude(generateRandomLongitude(random))
+                    .deviceFingerprint(generateRandomDeviceFingerprint(random))
+                    .ipAddress(generateRandomIP())
+                    .externalTransactionId(UUID.randomUUID().toString())
+                    .anonymizedFeatures(generateIEEEAnonymizedFeatures(random))
+                    .build();
 
-            transactions.add(transaction);
+                transactions.add(transaction);
+            }
+        } catch (Exception e) {
+            log.error("Error generating transactions for time window {} - {}: {}", 
+                startTime, endTime, e.getMessage(), e);
         }
 
         return transactions;
@@ -290,11 +322,14 @@ public class TransactionStreamingService {
             return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(features);
 
         } catch (Exception e) {
+            log.warn("Failed to generate IEEE anonymized features: {}", e.getMessage());
             return "{}";
         }
     }
 
     private String generateMerchantFromProduct(String productCode) {
+        if (productCode == null) return "Unknown_Merchant_" + new Random().nextInt(1000);
+        
         switch (productCode) {
             case "W": return "WorldWide_Store_" + new Random().nextInt(1000);
             case "C": return "Card_Services_" + new Random().nextInt(100);
@@ -311,36 +346,56 @@ public class TransactionStreamingService {
     }
     
     private void processTransaction(Transaction transaction) {
+        if (transaction == null) {
+            log.warn("Attempted to process null transaction");
+            return;
+        }
+        
         try {
             // 트랜잭션 저장 및 사기 탐지 실행
             transactionService.processAndDetectFraud(transaction);
             
         } catch (Exception e) {
-            log.error("Error processing transaction {}: {}", transaction.getId(), e.getMessage());
+            log.error("Error processing transaction {}: {}", transaction.getId(), e.getMessage(), e);
         }
     }
     
     public void pauseStreaming() {
-        if (currentConfig.get() != null) {
-            currentConfig.get().setPaused(true);
+        StreamingConfig config = currentConfig.get();
+        if (config != null) {
+            config.setPaused(true);
             log.info("Transaction streaming paused");
             updateStreamingStatus();
             broadcastStreamingStatus();
+        } else {
+            log.warn("No active streaming to pause");
         }
     }
     
     public void resumeStreaming() {
-        if (currentConfig.get() != null) {
-            currentConfig.get().setPaused(false);
+        StreamingConfig config = currentConfig.get();
+        if (config != null) {
+            config.setPaused(false);
             log.info("Transaction streaming resumed");
             updateStreamingStatus();
             broadcastStreamingStatus();
+        } else {
+            log.warn("No active streaming to resume");
         }
     }
     
     public void stopStreaming() {
         isStreaming.set(false);
-        scheduler.shutdownNow();
+        
+        try {
+            scheduler.shutdown();
+            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                scheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            scheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
         
         log.info("Transaction streaming stopped");
         updateStreamingStatus();
@@ -348,23 +403,36 @@ public class TransactionStreamingService {
     }
     
     public void updateSpeed(Double newSpeedMultiplier) {
+        if (newSpeedMultiplier == null || newSpeedMultiplier <= 0) {
+            throw new IllegalArgumentException("Speed multiplier must be positive");
+        }
+        
         StreamingConfig config = currentConfig.get();
         if (config != null) {
             config.setSpeedMultiplier(newSpeedMultiplier);
             log.info("Streaming speed updated to {}x", newSpeedMultiplier);
             updateStreamingStatus();
             broadcastStreamingStatus();
+        } else {
+            log.warn("No active streaming to update speed");
         }
     }
     
     public void jumpToTime(LocalDateTime targetTime) {
-        if (currentConfig.get() != null && 
-            currentConfig.get().getMode() == StreamingConfig.StreamingMode.TIMEMACHINE) {
+        if (targetTime == null) {
+            throw new IllegalArgumentException("Target time cannot be null");
+        }
+        
+        StreamingConfig config = currentConfig.get();
+        if (config != null && 
+            config.getMode() == StreamingConfig.StreamingMode.TIMEMACHINE) {
             
             currentVirtualTime.set(targetTime);
             log.info("Virtual time jumped to {}", targetTime);
             updateStreamingStatus();
             broadcastStreamingStatus();
+        } else {
+            log.warn("Time jump only available in TIME_MACHINE mode");
         }
     }
     
@@ -376,23 +444,32 @@ public class TransactionStreamingService {
         streamingStatus.put("isPaused", config != null ? config.getPaused() : false);
         streamingStatus.put("mode", config != null ? config.getMode().name() : "STOPPED");
         streamingStatus.put("speedMultiplier", config != null ? config.getSpeedMultiplier() : 0.0);
-        streamingStatus.put("currentVirtualTime", virtualTime != null ? virtualTime.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
+        streamingStatus.put("currentVirtualTime", virtualTime != null ? 
+            virtualTime.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
         streamingStatus.put("updatedAt", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         
         if (config != null && config.getEndTime() != null && virtualTime != null) {
-            double progress = (double) java.time.Duration.between(
-                config.getStartTime() != null ? config.getStartTime() : DEFAULT_START_TIME, 
-                virtualTime
-            ).toMinutes() / java.time.Duration.between(
-                config.getStartTime() != null ? config.getStartTime() : DEFAULT_START_TIME, 
-                config.getEndTime()
-            ).toMinutes();
+            LocalDateTime startTime = config.getStartTime() != null ? config.getStartTime() : DEFAULT_START_TIME;
+            
+            long totalMinutes = java.time.Duration.between(startTime, config.getEndTime()).toMinutes();
+            long elapsedMinutes = java.time.Duration.between(startTime, virtualTime).toMinutes();
+            
+            double progress = totalMinutes > 0 ? (double) elapsedMinutes / totalMinutes : 0.0;
             streamingStatus.put("progress", Math.min(1.0, Math.max(0.0, progress)));
         }
     }
     
     private void broadcastStreamingStatus() {
-        messagingTemplate.convertAndSend("/topic/streaming-status", streamingStatus);
+        if (messagingTemplate != null) {
+            try {
+                messagingTemplate.convertAndSend("/topic/streaming-status", streamingStatus);
+                log.debug("Streaming status broadcasted");
+            } catch (Exception e) {
+                log.warn("Failed to broadcast streaming status: {}", e.getMessage());
+            }
+        } else {
+            log.debug("WebSocket messaging not available, skipping status broadcast");
+        }
     }
     
     public Map<String, Object> getStreamingStatus() {

@@ -68,10 +68,6 @@ public class ModelPredictionRequest {
     private String deviceFingerprint;  // 생성: DeviceType+DeviceInfo 조합
     private String ipAddress;          // 생성: identity features 기반
 
-    // 호환성을 위한 기존 필드 (삭제 예정)
-    @Deprecated
-    private Map<String, Object> anonymizedFeatures;
-
     // 모델 설정
     private Map<String, BigDecimal> modelWeights;
     private BigDecimal threshold;

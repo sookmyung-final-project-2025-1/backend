@@ -86,4 +86,12 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     @Query("SELECT SUM(t.amount) FROM Transaction t WHERE t.virtualTime >= :startTime AND t.virtualTime < :endTime AND t.isFraud = true")
     Double sumFraudTransactionAmounts(@Param("startTime") LocalDateTime startTime,
                                     @Param("endTime") LocalDateTime endTime);
+
+    @Query("SELECT COUNT(DISTINCT t.userId) FROM Transaction t " +
+            "WHERE t.userId NOT IN (" +
+            "  SELECT DISTINCT t2.userId FROM Transaction t2 " +
+            "  WHERE t2.transactionTime < :startTime" +
+            ") AND t.transactionTime >= :startTime AND t.transactionTime <= :endTime")
+    Long countNewUsersInPeriod(@Param("startTime") LocalDateTime startTime,
+                                @Param("endTime") LocalDateTime endTime);
 }
