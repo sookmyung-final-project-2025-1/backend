@@ -26,8 +26,18 @@ public class DashboardController {
     @GetMapping("/kpis")
     @Operation(summary = "대시보드 KPI 조회", description = "대시보드의 핵심 성과 지표를 조회합니다")
     @ApiResponse(responseCode = "200", description = "KPI 조회 성공",
-        content = @Content(mediaType = "application/json",
-            examples = @ExampleObject(value = "{\"totalTransactions\": 15642, \"fraudDetected\": 89, \"fraudRate\": 0.57, \"avgConfidenceScore\": 0.82}")))
+            content = @Content(examples = @ExampleObject(value = """
+        {
+          "totalTransactions": 15642,
+          "fraudTransactions": 89,
+          "fraudRate": 0.57,
+          "uniqueUsers": 8734,
+          "averageTransactionAmount": 156.78,
+          "throughputPerHour": 1564.2,
+          "latencyP50Ms": 125.5,
+          "latencyP95Ms": 342.1,
+          "averageConfidenceScore": 0.824
+        }""")))
     public ResponseEntity<Map<String, Object>> getDashboardKPIs(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {

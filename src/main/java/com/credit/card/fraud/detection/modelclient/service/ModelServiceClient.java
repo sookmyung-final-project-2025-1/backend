@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -89,7 +90,7 @@ public class ModelServiceClient {
      */
     public BigDecimal predictSingleModel(ModelPredictionRequest request, String modelType) {
         try {
-            String endpoint = String.format("%s/model/%s/predict",
+            String endpoint = String.format("%s/%s/predict",
                     modelServiceProperties.getUrl(), modelType);
 
             // FastAPI 요청 구조에 맞게 데이터 구성
@@ -168,15 +169,20 @@ public class ModelServiceClient {
                 modelInfo.put("xgboost_available", infoJson.path("xgboost").path("available").asBoolean());
                 modelInfo.put("catboost_available", infoJson.path("catboost").path("available").asBoolean());
 
-                // 디렉터리 버전은 별도 필드로 저장
-                modelInfo.put("lgbm_dir_version", infoJson.path("lgbm").path("version").asText("v5"));
-                modelInfo.put("xgboost_dir_version", infoJson.path("xgboost").path("version").asText("v6"));
-                modelInfo.put("catboost_dir_version", infoJson.path("catboost").path("version").asText("v7"));
+                // 로드된 모델 목록
+                List<String> loadedModels = new ArrayList<>();
+                if (infoJson.path("lgbm").path("available").asBoolean()) loadedModels.add("lgbm");
+                if (infoJson.path("xgboost").path("available").asBoolean()) loadedModels.add("xgboost");
+                if (infoJson.path("catboost").path("available").asBoolean()) loadedModels.add("catboost");
+
+                modelInfo.put("models_loaded", loadedModels);
+                modelInfo.put("loaded_at", java.time.LocalDateTime.now().toString());
             } else {
                 // FastAPI 연결 실패시에도 릴리즈 버전은 반환
                 modelInfo.put("lgbm_available", false);
                 modelInfo.put("xgboost_available", false);
                 modelInfo.put("catboost_available", false);
+                modelInfo.put("models_loaded", List.of());
             }
 
             return modelInfo;
@@ -193,7 +199,8 @@ public class ModelServiceClient {
      */
     public String getLatestReleaseVersion() {
         try {
-            String githubApiUrl = "https://api.github.com/repos/sookmyung-final-project-2025-1/Data/releases/latest";
+            String githubApiUrl = String.format("https://api.github.com/repos/%s/releases/latest",
+                    modelServiceProperties.getGithub().getDataRepo());
 
             HttpHeaders headers = new HttpHeaders();
             headers.set("Accept", "application/vnd.github.v3+json");
@@ -213,11 +220,11 @@ public class ModelServiceClient {
             log.warn("Failed to fetch latest release version: {}", e.getMessage());
         }
 
-        return "unknown";
+        return modelServiceProperties.getGithub().getDefaultVersion();
     }
 
     /**
-     * FastAPI payload 구성 (기존 FraudModel 형식에 맞게)
+     * FastAPI payload 구성 (AI 레포 형식에 맞게)
      */
     private Map<String, Object> buildPayload(ModelPredictionRequest request) {
         Map<String, Object> payload = new HashMap<>();
@@ -283,35 +290,57 @@ public class ModelServiceClient {
     }
 
     /**
-     * 모델 재로드 (스텁 구현)
-     */
-    public boolean reloadModels() {
-        log.info("Model reload requested (not implemented for single model setup)");
-        return true;
-    }
-
-    /**
-     * 사용 가능한 버전 목록 (스텁 구현)
+     * 사용 가능한 버전 목록 조회
      */
     public List<String> getAvailableVersions() {
+        try {
+            String githubApiUrl = String.format("https://api.github.com/repos/%s/releases",
+                    modelServiceProperties.getGithub().getDataRepo());
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Accept", "application/vnd.github.v3+json");
+            headers.set("User-Agent", "fraud-detection-backend");
+
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+
+            ResponseEntity<String> response = restTemplate.exchange(
+                    githubApiUrl, HttpMethod.GET, entity, String.class);
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                JsonNode releases = objectMapper.readTree(response.getBody());
+                List<String> versions = new ArrayList<>();
+
+                for (JsonNode release : releases) {
+                    if (!release.get("draft").asBoolean() && !release.get("prerelease").asBoolean()) {
+                        versions.add(release.get("tag_name").asText());
+                    }
+                }
+
+                return versions;
+            }
+
+        } catch (Exception e) {
+            log.error("Failed to fetch available versions: {}", e.getMessage());
+        }
+
         return List.of(getLatestReleaseVersion());
     }
 
-    /**
-     * 모델 버전 업데이트 (스텁 구현)
-     */
-    public boolean updateModelVersion(String version) {
-        log.info("Model version update requested to {} (not implemented for single model setup)", version);
+    // 스텁 메서드들 (현재 AI 레포 구조상 구현되지 않은 기능들)
+    public boolean reloadModels() {
+        log.info("Model reload requested (AI repo handles deployment separately)");
         return true;
     }
 
-    /**
-     * 모델 메타데이터 조회 (스텁 구현)
-     */
+    public boolean updateModelVersion(String version) {
+        log.info("Model version update to {} requested (AI repo handles deployment separately)", version);
+        return true;
+    }
+
     public Map<String, Object> getModelMetadata(String version) {
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("version", version);
-        metadata.put("note", "Metadata not available for single model setup");
+        metadata.put("note", "Metadata retrieval not implemented in current AI repo structure");
         return metadata;
     }
 }
