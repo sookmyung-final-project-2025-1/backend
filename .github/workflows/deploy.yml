@@ -41,12 +41,21 @@ jobs:
           # Data 레포에서 최신 릴리즈 정보 가져오기
           LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/sookmyung-final-project-2025-1/Data/releases/latest" | \
-            grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4 || echo "v1.0.0")
+            grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4 || echo "v1.2.0")
           if [ -z "$LATEST_RELEASE" ]; then
-            LATEST_RELEASE="v1.0.0"
+            LATEST_RELEASE="v1.2.0"
           fi
           echo "latest_release=$LATEST_RELEASE" >> $GITHUB_OUTPUT
           echo "Latest model release: $LATEST_RELEASE"
+          
+          # MODEL_VERSION 환경변수 설정 (v1.2.0 -> v1)
+          if [[ "$LATEST_RELEASE" =~ ^v([0-9]+)\. ]]; then
+            MODEL_VER="v${BASH_REMATCH[1]}"
+          else
+            MODEL_VER="v1"
+          fi
+          echo "model_version=$MODEL_VER" >> $GITHUB_OUTPUT
+          echo "Model version: $MODEL_VER"
 
       - name: Create production environment
         run: |
@@ -68,13 +77,13 @@ jobs:
           SPRING_JPA_SHOW_SQL=true
           MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always
           MODEL_SERVICE_ENABLED=true
-          MODEL_SERVICE_URL=${{ secrets.MODEL_SERVICE_URL }}
+          MODEL_SERVICE_URL=http://model:8000
           MODEL_DIR=/app/models
-          MODEL_VERSION=${{ steps.get_latest_release.outputs.latest_release }}
+          MODEL_VERSION=${{ steps.get_latest_release.outputs.model_version }}
           GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO=sookmyung-final-project-2025-1/Data
           APP_IMAGE=fraud-detection-app:latest
-          MODEL_IMAGE=ghcr.io/sookmyung-final-project-2025-1/fraud-model:latest
+          MODEL_IMAGE=${{ secrets.DOCKERHUB_USER }}/fraud-model:${{ steps.get_latest_release.outputs.latest_release }}
           EOF
 
       - name: Build and deploy
@@ -92,19 +101,40 @@ jobs:
           sudo docker compose down || true
           sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate
           
-          # Health check
+          # Health check - 앱 먼저 확인
+          echo "Checking application health..."
           for i in {1..24}; do
-            if curl -fsSLk http://localhost/actuator/health >/dev/null 2>&1; then
-              echo "Deployment successful"
-              exit 0
+            if curl -fsSLk http://localhost:8080/actuator/health >/dev/null 2>&1; then
+              echo "✅ Application is healthy"
+              break
             fi
-            echo "Waiting for app... ($i/24)"
+            echo "⏳ Waiting for app... ($i/24)"
             sleep 5
           done
           
-          echo "Deployment failed - showing logs:"
-          sudo docker compose logs --tail=50
-          exit 1
+          # 모델 서비스 확인
+          echo "Checking model service health..."
+          for i in {1..18}; do
+            if curl -fsSLk http://localhost:8000/health >/dev/null 2>&1; then
+              echo "✅ Model service is healthy"
+              echo "🎉 Full deployment successful"
+              exit 0
+            fi
+            echo "⏳ Waiting for model service... ($i/18)"
+            sleep 10
+          done
+          
+          echo "⚠️ Application deployed but model service may not be ready"
+          echo "Showing logs for diagnosis:"
+          sudo docker compose logs --tail=50 model
+          # 앱이 정상이면 성공으로 처리 (모델은 별도 배포 가능)
+          if curl -fsSLk http://localhost:8080/actuator/health >/dev/null 2>&1; then
+            exit 0
+          else
+            echo "❌ Application deployment failed"
+            sudo docker compose logs --tail=50
+            exit 1
+          fi
 
       - name: Cleanup
         if: always()

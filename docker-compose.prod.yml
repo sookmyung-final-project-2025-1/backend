@@ -12,6 +12,7 @@ services:
       - ${ENV_FILE:-.env}
     environment:
       SPRING_PROFILES_ACTIVE: production
+      MODEL_SERVICE_URL: http://model:8000
     deploy:
       resources:
         limits:
@@ -22,7 +23,20 @@ services:
           cpus: "0.5"
 
   model:
-    image: fraud-model:latest
+    image: ${MODEL_IMAGE:-fraud-model:latest}
+    environment:
+      MODEL_VERSION: ${MODEL_VERSION:-v1}
+      MODEL_DIR: /app/models/${MODEL_VERSION:-v1}
+    volumes:
+      - model_data:/app/models
+    networks: [fraud-detection-network]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -31,3 +45,6 @@ services:
         reservations:
           memory: 512M
           cpus: "0.3"
+
+volumes:
+  model_data:
