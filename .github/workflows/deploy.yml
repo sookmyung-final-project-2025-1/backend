@@ -78,7 +78,7 @@ jobs:
           MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always
           MODEL_SERVICE_ENABLED=true
           MODEL_SERVICE_URL=http://model:8000
-          MODEL_DIR=/app/models
+          MODEL_BASE_DIR=/app/models
           MODEL_VERSION=${{ steps.get_latest_release.outputs.model_version }}
           GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO=sookmyung-final-project-2025-1/Data
