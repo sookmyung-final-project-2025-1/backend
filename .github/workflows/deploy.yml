@@ -87,51 +87,51 @@ jobs:
           EOF
 
       - name: Build and deploy
-          run: |
-            # Build image
-            sudo docker build --no-cache -t fraud-detection-app:latest .
-            
-            # Setup SSL
-            chmod +x ./setup-ssl.sh && sudo ./setup-ssl.sh
-            
-            # Stop conflicting services
-            sudo systemctl stop nginx || true
-            
-            # Deploy
-            sudo docker compose down || true
-            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate
-            
-            # Health check - 앱 먼저 확인
-            echo "Checking application health..."
-            for i in {1..24}; do
-              if curl -fsSLk http://localhost:8080/actuator/health >/dev/null 2>&1; then
-                echo "✅ Application is healthy"
-                break
-              fi
-              echo "⏳ Waiting for app... ($i/24)"
-              sleep 5
-            done
-            
-            # 모델 서비스 체크 (실패해도 무시)
-            echo "Checking model service availability..."
-            if curl -fsSLk http://localhost:8000/health >/dev/null 2>&1; then
-              echo "✅ Model service is available"
-            else
-              echo "⚠️ Model service not available - will be deployed separately"
-              echo "Showing model container logs for diagnosis:"
-              sudo docker compose logs --tail=20 model || true
-            fi
-            
-            # 앱이 정상이면 성공으로 처리
+        run: |
+          # Build image
+          sudo docker build --no-cache -t fraud-detection-app:latest .
+          
+          # Setup SSL
+          chmod +x ./setup-ssl.sh && sudo ./setup-ssl.sh
+          
+          # Stop conflicting services
+          sudo systemctl stop nginx || true
+          
+          # Deploy
+          sudo docker compose down || true
+          sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate
+          
+          # Health check - 앱 먼저 확인
+          echo "Checking application health..."
+          for i in {1..24}; do
             if curl -fsSLk http://localhost:8080/actuator/health >/dev/null 2>&1; then
-              echo "🎉 Backend deployment successful!"
-              echo "Model service will be available after model deployment workflow"
-              exit 0
-            else
-              echo "❌ Application deployment failed"
-              sudo docker compose logs --tail=50
-              exit 1
+              echo "✅ Application is healthy"
+              break
             fi
+            echo "⏳ Waiting for app... ($i/24)"
+            sleep 5
+          done
+          
+          # 모델 서비스 체크 (실패해도 무시)
+          echo "Checking model service availability..."
+          if curl -fsSLk http://localhost:8000/health >/dev/null 2>&1; then
+            echo "✅ Model service is available"
+          else
+            echo "⚠️ Model service not available - will be deployed separately"
+            echo "Showing model container logs for diagnosis:"
+            sudo docker compose logs --tail=20 model || true
+          fi
+          
+          # 앱이 정상이면 성공으로 처리
+          if curl -fsSLk http://localhost:8080/actuator/health >/dev/null 2>&1; then
+            echo "🎉 Backend deployment successful!"
+            echo "Model service will be available after model deployment workflow"
+            exit 0
+          else
+            echo "❌ Application deployment failed"
+            sudo docker compose logs --tail=50
+            exit 1
+          fi
 
       - name: Cleanup
         if: always()
