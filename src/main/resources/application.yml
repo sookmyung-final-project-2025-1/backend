@@ -202,3 +202,7 @@ management:
       show-values: never  # 환경변수 값 숨기기
     configprops:
       show-values: never  # 설정 프로퍼티 값 숨기기
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
