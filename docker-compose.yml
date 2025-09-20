@@ -12,10 +12,10 @@ services:
     networks: [fraud-detection-network]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/liveness || exit 1"]
-      timeout: 3s
-      retries: 30
-      interval: 10s
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword123}"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
       start_period: 120s
 
   redis:
