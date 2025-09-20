@@ -112,18 +112,6 @@ jobs:
             sleep 5
           done
           
-          # 모델 서비스 확인
-#          echo "Checking model service health..."
-#          for i in {1..18}; do
-#            if curl -fsSLk http://localhost:8000/health >/dev/null 2>&1; then
-#              echo "✅ Model service is healthy"
-#              echo "🎉 Full deployment successful"
-#              exit 0
-#            fi
-#            echo "⏳ Waiting for model service... ($i/18)"
-#            sleep 10
-#          done
-          
           echo "⚠️ Application deployed but model service may not be ready"
           echo "Showing logs for diagnosis:"
           sudo docker compose logs --tail=50 model
