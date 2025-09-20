@@ -15,6 +15,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -216,7 +217,7 @@ public class ModelServiceClient {
     }
 
     /**
-     * payload 구성 (기존 FraudModel 형식에 맞게)
+     * FastAPI payload 구성 (기존 FraudModel 형식에 맞게)
      */
     private Map<String, Object> buildPayload(ModelPredictionRequest request) {
         Map<String, Object> payload = new HashMap<>();
@@ -279,5 +280,38 @@ public class ModelServiceClient {
         weights.put("xgboost", new BigDecimal("0.333"));
         weights.put("catboost", new BigDecimal("0.334"));
         return weights;
+    }
+
+    /**
+     * 모델 재로드 (스텁 구현)
+     */
+    public boolean reloadModels() {
+        log.info("Model reload requested (not implemented for single model setup)");
+        return true;
+    }
+
+    /**
+     * 사용 가능한 버전 목록 (스텁 구현)
+     */
+    public List<String> getAvailableVersions() {
+        return List.of(getLatestReleaseVersion());
+    }
+
+    /**
+     * 모델 버전 업데이트 (스텁 구현)
+     */
+    public boolean updateModelVersion(String version) {
+        log.info("Model version update requested to {} (not implemented for single model setup)", version);
+        return true;
+    }
+
+    /**
+     * 모델 메타데이터 조회 (스텁 구현)
+     */
+    public Map<String, Object> getModelMetadata(String version) {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("version", version);
+        metadata.put("note", "Metadata not available for single model setup");
+        return metadata;
     }
 }
