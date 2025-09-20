@@ -23,20 +23,6 @@ services:
           cpus: "0.5"
 
   model:
-    image: ${MODEL_IMAGE:-fraud-model:latest}
-    environment:
-      MODEL_VERSION: ${MODEL_VERSION:-v1}
-      MODEL_DIR: /app/models/${MODEL_VERSION:-v1}
-    volumes:
-      - model_data:/app/models
-    networks: [fraud-detection-network]
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
     deploy:
       resources:
         limits:
@@ -45,6 +31,3 @@ services:
         reservations:
           memory: 512M
           cpus: "0.3"
-
-volumes:
-  model_data:

@@ -62,6 +62,24 @@ services:
       retries: 3
       start_period: 40s
 
+  model:
+    image: ${MODEL_IMAGE:-fraud-model:latest}
+    environment:
+      MODEL_VERSION: ${MODEL_VERSION:-v1}
+      MODEL_DIR: /app/models/${MODEL_VERSION:-v1}
+      LGBM_DIR: /app/models/v5
+      XGB_DIR: /app/models/v6
+      CAT_DIR: /app/models/v7
+    expose: ["8000"]
+    networks: [fraud-detection-network]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   nginx:
     image: nginx:alpine
     ports:
