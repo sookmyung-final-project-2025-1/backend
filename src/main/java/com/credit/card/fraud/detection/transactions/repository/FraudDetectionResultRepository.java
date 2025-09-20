@@ -92,10 +92,29 @@ public interface FraudDetectionResultRepository extends JpaRepository<FraudDetec
     List<FraudDetectionResult> findHighRiskTransactions(@Param("threshold") BigDecimal threshold,
                                                         @Param("startTime") LocalDateTime startTime);
 
-        @Query("SELECT COUNT(fdr) FROM FraudDetectionResult fdr " +
-        "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime " +
-        "AND fdr.finalPrediction = true")
-        Long countFraudPredictions(@Param("startTime") LocalDateTime startTime,
-                                @Param("endTime") LocalDateTime endTime);
+    List<FraudDetectionResult> findByFinalScoreGreaterThanOrderByFinalScoreDesc(BigDecimal threshold);
+
+    List<FraudDetectionResult> findByRiskLevelOrderByCreatedAtDesc(FraudDetectionResult.RiskLevel riskLevel);
+
+    @Query("SELECT fdr FROM FraudDetectionResult fdr " +
+            "WHERE fdr.predictionTime BETWEEN :startTime AND :endTime " +
+            "ORDER BY fdr.finalScore DESC")
+    List<FraudDetectionResult> findResultsInPeriod(@Param("startTime") LocalDateTime startTime,
+                                                   @Param("endTime") LocalDateTime endTime);
+
+    @Query("SELECT AVG(fdr.processingTimeMs) FROM FraudDetectionResult fdr " +
+            "WHERE fdr.predictionTime >= :since")
+    Double getAverageProcessingTime(@Param("since") LocalDateTime since);
+
+    @Query("SELECT fdr.modelVersion, COUNT(fdr) FROM FraudDetectionResult fdr " +
+            "GROUP BY fdr.modelVersion " +
+            "ORDER BY COUNT(fdr) DESC")
+    List<Object[]> getModelVersionStats();
+
+    @Query("SELECT COUNT(fdr) FROM FraudDetectionResult fdr " +
+            "WHERE fdr.predictionTime >= :startTime AND fdr.predictionTime <= :endTime " +
+            "AND fdr.finalPrediction = true")
+    Long countFraudPredictions(@Param("startTime") LocalDateTime startTime,
+                               @Param("endTime") LocalDateTime endTime);
 
 }

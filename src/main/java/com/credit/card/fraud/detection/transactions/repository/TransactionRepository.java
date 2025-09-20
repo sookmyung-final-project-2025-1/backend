@@ -94,4 +94,45 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
             ") AND t.transactionTime >= :startTime AND t.transactionTime <= :endTime")
     Long countNewUsersInPeriod(@Param("startTime") LocalDateTime startTime,
                                 @Param("endTime") LocalDateTime endTime);
+
+    // 사용자별 거래 조회
+    List<Transaction> findByUserIdOrderByTransactionTimeDesc(String userId, Pageable pageable);
+
+    // 고위험 거래 조회 (탐지 결과와 조인)
+    @Query("SELECT t FROM Transaction t " +
+            "JOIN FraudDetectionResult fdr ON fdr.transaction = t " +
+            "WHERE fdr.finalScore >= :minScore " +
+            "ORDER BY fdr.finalScore DESC")
+    List<Transaction> findHighRiskTransactions(@Param("minScore") BigDecimal minScore, Pageable pageable);
+
+    // 골드 라벨 거래 조회
+    List<Transaction> findByGoldLabelIsNotNullAndGoldLabel(Boolean goldLabel, Pageable pageable);
+
+    // 기간별 거래 통계
+    @Query("SELECT COUNT(t) FROM Transaction t " +
+            "WHERE t.transactionTime BETWEEN :startTime AND :endTime")
+    Long countTransactionsInPeriod(@Param("startTime") LocalDateTime startTime,
+                                   @Param("endTime") LocalDateTime endTime);
+
+    // 사기 거래 통계
+    @Query("SELECT COUNT(t) FROM Transaction t " +
+            "WHERE t.isFraud = true AND t.transactionTime BETWEEN :startTime AND :endTime")
+    Long countFraudTransactionsInPeriod(@Param("startTime") LocalDateTime startTime,
+                                        @Param("endTime") LocalDateTime endTime);
+
+    // 최근 처리된 거래들
+    @Query("SELECT t FROM Transaction t " +
+            "WHERE t.status = 'PROCESSED' " +
+            "AND t.updatedAt >= :since " +
+            "ORDER BY t.updatedAt DESC")
+    List<Transaction> findRecentlyProcessed(@Param("since") LocalDateTime since);
+
+    // 머천트별 거래 통계
+    @Query("SELECT t.merchant, COUNT(t), SUM(t.amount) " +
+            "FROM Transaction t " +
+            "WHERE t.transactionTime BETWEEN :startTime AND :endTime " +
+            "GROUP BY t.merchant " +
+            "ORDER BY COUNT(t) DESC")
+    List<Object[]> getMerchantStatistics(@Param("startTime") LocalDateTime startTime,
+                                         @Param("endTime") LocalDateTime endTime);
 }
