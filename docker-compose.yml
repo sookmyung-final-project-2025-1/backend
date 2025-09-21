@@ -64,9 +64,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
 
   model:
     image: ${MODEL_IMAGE:-fraud-model:latest}
