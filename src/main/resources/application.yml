@@ -78,9 +78,9 @@ server:
       enabled: true
       force: true
     multipart:
-      max-file-size: 2GB
-      max-request-size: 2GB
-      file-size-threshold: 10MB
+      max-file-size: 2147483648
+      max-request-size: 2147483648
+      file-size-threshold: 10485760
   shutdown: graceful
   tomcat:
     connection-timeout: 600000  # 10분으로 연장
