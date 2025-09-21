@@ -136,8 +136,16 @@ public class BatchFraudDetectionService {
 
             while (hasMore) {
                 Pageable pageable = PageRequest.of(pageNumber, PROCESSING_BATCH_SIZE);
-                List<Transaction> transactions = transactionRepository.findPendingTransactionsWithAssociations(pageable);
-                Page<Transaction> pendingTransactions = new PageImpl<>(transactions, pageable, transactions.size());
+
+                // 먼저 detectionResults를 포함해서 로딩
+                List<Transaction> transactionsWithDetectionResults = transactionRepository.findPendingTransactionsWithDetectionResults(pageable);
+
+                // 그 다음 같은 거래들의 reports를 로딩 (이미 1차 캐시에 있는 엔티티들에 추가됨)
+                if (!transactionsWithDetectionResults.isEmpty()) {
+                    transactionRepository.findPendingTransactionsWithReports(pageable);
+                }
+
+                Page<Transaction> pendingTransactions = new PageImpl<>(transactionsWithDetectionResults, pageable, transactionsWithDetectionResults.size());
 
                 if (!pendingTransactions.hasContent()) {
                     hasMore = false;
