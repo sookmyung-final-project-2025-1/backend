@@ -140,6 +140,27 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     // 상태별 거래 조회
     Page<Transaction> findByStatus(Transaction.TransactionStatus status, Pageable pageable);
 
+    // 배치 처리용 최적화된 쿼리 (JOIN FETCH 사용)
+    @Query("SELECT t FROM Transaction t " +
+           "LEFT JOIN FETCH t.detectionResults " +
+           "LEFT JOIN FETCH t.reports " +
+           "WHERE t.status = :status")
+    List<Transaction> findByStatusWithDetectionResults(@Param("status") Transaction.TransactionStatus status, Pageable pageable);
+
+    // 배치 처리용 PENDING 거래 조회 (연관 데이터 포함)
+    @Query("SELECT DISTINCT t FROM Transaction t " +
+           "LEFT JOIN FETCH t.detectionResults dr " +
+           "LEFT JOIN FETCH t.reports r " +
+           "WHERE t.status = 'PENDING' " +
+           "ORDER BY t.id")
+    List<Transaction> findPendingTransactionsWithAssociations(Pageable pageable);
+
+    // 배치 처리용 ID 리스트로 조회
+    @Query("SELECT t FROM Transaction t " +
+           "LEFT JOIN FETCH t.detectionResults " +
+           "WHERE t.id IN :ids")
+    List<Transaction> findByIdsWithDetectionResults(@Param("ids") List<Long> ids);
+
     // 상태별 거래 개수 조회
     Long countByStatus(Transaction.TransactionStatus status);
 

@@ -3,6 +3,7 @@ package com.credit.card.fraud.detection.transactions.entity;
 import com.credit.card.fraud.detection.common.entity.BaseEntity;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
+import org.hibernate.annotations.BatchSize;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -93,10 +94,12 @@ public class Transaction extends BaseEntity {
     private String cardNumber;
 
     @OneToMany(mappedBy = "transaction", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @BatchSize(size = 100)
     @Builder.Default
     private List<UserReport> reports = new ArrayList<>();
 
     @OneToMany(mappedBy = "transaction", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @BatchSize(size = 100)
     @Builder.Default
     private List<FraudDetectionResult> detectionResults = new ArrayList<>();
 

@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
@@ -135,17 +136,17 @@ public class BatchFraudDetectionService {
 
             while (hasMore) {
                 Pageable pageable = PageRequest.of(pageNumber, PROCESSING_BATCH_SIZE);
-                Page<Transaction> pendingTransactions = transactionRepository.findByStatus(
-                    Transaction.TransactionStatus.PENDING, pageable);
+                List<Transaction> transactions = transactionRepository.findPendingTransactionsWithAssociations(pageable);
+                Page<Transaction> pendingTransactions = new PageImpl<>(transactions, pageable, transactions.size());
 
                 if (!pendingTransactions.hasContent()) {
                     hasMore = false;
                     continue;
                 }
 
-                // 현재 청크 처리
-                int chunkProcessed = processTransactionChunk(pendingTransactions.getContent());
-                totalProcessed.addAndGet(chunkProcessed);
+                // 현재 청크 처리 (배치 최적화)
+                List<Transaction> processedTransactions = transactionService.processBatchTransactions(pendingTransactions.getContent());
+                totalProcessed.addAndGet(processedTransactions.size());
 
                 // 처리 상태 로깅 (더 자주)
                 if (totalProcessed.get() % PROGRESS_LOG_INTERVAL == 0) {

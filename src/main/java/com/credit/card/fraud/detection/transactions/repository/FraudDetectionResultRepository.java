@@ -124,4 +124,8 @@ public interface FraudDetectionResultRepository extends JpaRepository<FraudDetec
     @Query("SELECT fdr.transaction.id FROM FraudDetectionResult fdr WHERE fdr.transaction.id IN :transactionIds")
     List<Long> findExistingTransactionIds(@Param("transactionIds") List<Long> transactionIds);
 
+    // 배치 저장을 위한 최적화된 메서드
+    @Query("SELECT fdr FROM FraudDetectionResult fdr WHERE fdr.transaction.id IN :transactionIds")
+    List<FraudDetectionResult> findByTransactionIds(@Param("transactionIds") List<Long> transactionIds);
+
 }

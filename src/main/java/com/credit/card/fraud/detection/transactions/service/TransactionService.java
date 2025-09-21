@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -61,6 +62,53 @@ public class TransactionService {
         } catch (Exception e) {
             log.error("Error processing transaction {}: {}", transaction.getId(), e.getMessage(), e);
             throw new TransactionProcessingException("Failed to process transaction: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 배치용 거래 처리 (성능 최적화)
+     */
+    @Transactional
+    public List<Transaction> processBatchTransactions(List<Transaction> transactions) {
+        if (transactions.isEmpty()) {
+            return transactions;
+        }
+
+        try {
+            // 1. 배치 저장
+            List<Transaction> savedTransactions = transactionRepository.saveAll(transactions);
+
+            // 2. 사기 탐지 및 결과 저장
+            List<FraudDetectionResult> detectionResults = new ArrayList<>();
+
+            for (Transaction transaction : savedTransactions) {
+                try {
+                    FraudDetectionResult result = fraudDetectionEngine.detectFraud(transaction);
+                    detectionResults.add(result);
+
+                    // 거래 상태 업데이트
+                    if (result.getFinalPrediction()) {
+                        transaction.markAsFraud();
+                    }
+                    transaction.markAsProcessed();
+                    transaction.addDetectionResult(result);
+
+                } catch (Exception e) {
+                    log.error("거래 {} 사기 탐지 실패: {}", transaction.getId(), e.getMessage());
+                    transaction.setStatus(Transaction.TransactionStatus.ERROR);
+                }
+            }
+
+            // 3. 배치 저장
+            fraudDetectionResultRepository.saveAll(detectionResults);
+            transactionRepository.saveAll(savedTransactions);
+
+            log.info("배치 처리 완료: {} 건", savedTransactions.size());
+            return savedTransactions;
+
+        } catch (Exception e) {
+            log.error("배치 처리 실패: {}", e.getMessage(), e);
+            throw new TransactionProcessingException("배치 처리 실패: " + e.getMessage(), e);
         }
     }
 
