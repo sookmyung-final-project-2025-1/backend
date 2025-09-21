@@ -205,14 +205,34 @@ public class BatchController {
             long deletedCount = csvBatchService.clearBatchData();
 
             return ResponseEntity.ok(Map.of(
-                "message", "배치 데이터 삭제 완료",
+                "message", "PENDING 데이터 삭제 완료",
                 "deletedCount", deletedCount
             ));
 
         } catch (Exception e) {
-            log.error("배치 데이터 삭제 실패", e);
+            log.error("PENDING 데이터 삭제 실패", e);
             return ResponseEntity.internalServerError().body(Map.of(
-                "error", "배치 데이터 삭제 실패: " + e.getMessage()
+                "error", "PENDING 데이터 삭제 실패: " + e.getMessage()
+            ));
+        }
+    }
+
+    @DeleteMapping("/clear-processed-data")
+    @Operation(summary = "PROCESSED 데이터 삭제", description = "사기탐지 처리가 완료된 모든 거래 데이터를 삭제합니다 (PROCESSED 상태 거래 대상)")
+    public ResponseEntity<Map<String, Object>> clearProcessedData() {
+        try {
+            long deletedCount = csvBatchService.clearProcessedData();
+
+            return ResponseEntity.ok(Map.of(
+                "message", "PROCESSED 데이터 삭제 완료",
+                "deletedCount", deletedCount,
+                "warning", "관련된 사기탐지 결과 및 사용자 신고 데이터도 함께 삭제되었습니다"
+            ));
+
+        } catch (Exception e) {
+            log.error("PROCESSED 데이터 삭제 실패", e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                "error", "PROCESSED 데이터 삭제 실패: " + e.getMessage()
             ));
         }
     }

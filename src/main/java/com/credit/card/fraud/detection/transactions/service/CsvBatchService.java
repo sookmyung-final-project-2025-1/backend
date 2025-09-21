@@ -2,6 +2,8 @@ package com.credit.card.fraud.detection.transactions.service;
 
 import com.credit.card.fraud.detection.transactions.entity.Transaction;
 import com.credit.card.fraud.detection.transactions.repository.TransactionRepository;
+import com.credit.card.fraud.detection.transactions.repository.FraudDetectionResultRepository;
+import com.credit.card.fraud.detection.transactions.repository.UserReportRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -28,6 +30,8 @@ public class CsvBatchService {
 
     private final TransactionRepository transactionRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final FraudDetectionResultRepository fraudDetectionResultRepository;
+    private final UserReportRepository userReportRepository;
 
     private static final int BATCH_SIZE = 5000;
     private static final String JOB_STATUS_PREFIX = "batch_job:";
@@ -418,6 +422,74 @@ public class CsvBatchService {
     }
 
     @Transactional
+    @CacheEvict(value = "pendingCount", key = "'pending_transaction_count'")
+    public long clearProcessedData() {
+        try {
+            log.info("PROCESSED 상태 데이터 삭제 시작");
+
+            long totalDeleted = 0;
+            int chunkSize = 10000; // 한 번에 1만건씩 삭제
+
+            // PROCESSED 상태 거래 개수 확인
+            long processedCount = transactionRepository.countByStatus(Transaction.TransactionStatus.PROCESSED);
+            log.info("삭제 대상 PROCESSED 거래: {} 건", processedCount);
+
+            if (processedCount == 0) {
+                log.info("삭제할 PROCESSED 거래가 없습니다");
+                return 0;
+            }
+
+            // 청크 단위로 삭제 처리
+            int deletedInChunk;
+            int iteration = 0;
+            int maxIterations = (int) Math.ceil((double) processedCount / chunkSize) + 10; // 안전 마진 추가
+            int consecutiveZeroDeletes = 0;
+
+            do {
+                iteration++;
+                deletedInChunk = deleteChunkByStatusWithReferences(Transaction.TransactionStatus.PROCESSED, chunkSize);
+                totalDeleted += deletedInChunk;
+
+                log.info("PROCESSED 삭제 진행 중: {} 회차, 이번 청크: {} 건, 총 삭제: {} 건",
+                        iteration, deletedInChunk, totalDeleted);
+
+                // 연속으로 삭제되지 않는 경우 카운트
+                if (deletedInChunk == 0) {
+                    consecutiveZeroDeletes++;
+                } else {
+                    consecutiveZeroDeletes = 0;
+                }
+
+                // 안전장치: 최대 반복 횟수 초과 또는 연속 3회 삭제 실패시 중단
+                if (iteration >= maxIterations || consecutiveZeroDeletes >= 3) {
+                    log.warn("PROCESSED 삭제 작업 중단 - 반복: {}/{}, 연속 실패: {} 회",
+                            iteration, maxIterations, consecutiveZeroDeletes);
+                    break;
+                }
+
+                // 잠시 대기하여 DB 부하 방지
+                if (deletedInChunk > 0) {
+                    try {
+                        Thread.sleep(100); // 100ms 대기
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        log.warn("PROCESSED 삭제 작업이 중단되었습니다");
+                        break;
+                    }
+                }
+
+            } while (deletedInChunk > 0);
+
+            log.info("PROCESSED 데이터 삭제 완료: {} 건의 거래 삭제 ({} 회 반복)", totalDeleted, iteration);
+
+            return totalDeleted;
+        } catch (Exception e) {
+            log.error("PROCESSED 데이터 삭제 중 오류 발생", e);
+            throw new RuntimeException("PROCESSED 데이터 삭제 실패: " + e.getMessage(), e);
+        }
+    }
+
+    @Transactional
     private int deleteChunkByStatus(Transaction.TransactionStatus status, int limit) {
         try {
             // ID 기반으로 청크 조회 후 삭제
@@ -449,6 +521,87 @@ public class CsvBatchService {
             int deletedCount = 0;
             for (Transaction transaction : chunk) {
                 try {
+                    transactionRepository.delete(transaction);
+                    deletedCount++;
+                } catch (Exception ex) {
+                    log.debug("개별 거래 삭제 실패: ID={}", transaction.getId());
+                }
+            }
+
+            if (deletedCount > 0) {
+                transactionRepository.flush();
+            }
+
+            return deletedCount;
+        }
+    }
+
+    @Transactional
+    private int deleteChunkByStatusWithReferences(Transaction.TransactionStatus status, int limit) {
+        try {
+            // ID 기반으로 청크 조회
+            List<Transaction> chunk = transactionRepository.findByStatus(status,
+                    org.springframework.data.domain.PageRequest.of(0, limit))
+                    .getContent();
+
+            if (chunk.isEmpty()) {
+                return 0;
+            }
+
+            // 트랜잭션 ID 리스트 추출
+            List<Long> transactionIds = chunk.stream()
+                    .map(Transaction::getId)
+                    .toList();
+
+            // 1. 먼저 참조 테이블들의 데이터 삭제
+            log.debug("참조 테이블 데이터 삭제 중: {} 건", transactionIds.size());
+
+            // FraudDetectionResult 삭제
+            for (Long transactionId : transactionIds) {
+                try {
+                    fraudDetectionResultRepository.findByTransaction_Id(transactionId)
+                            .ifPresent(fraudDetectionResultRepository::delete);
+                } catch (Exception e) {
+                    log.debug("FraudDetectionResult 삭제 실패: transaction_id={}", transactionId);
+                }
+            }
+
+            // UserReport 삭제
+            for (Long transactionId : transactionIds) {
+                try {
+                    List<com.credit.card.fraud.detection.transactions.entity.UserReport> reports =
+                            userReportRepository.findByTransaction_IdOrderByCreatedAtDesc(transactionId);
+                    userReportRepository.deleteAll(reports);
+                } catch (Exception e) {
+                    log.debug("UserReport 삭제 실패: transaction_id={}", transactionId);
+                }
+            }
+
+            // 2. 마지막으로 Transaction 삭제
+            transactionRepository.deleteAllById(transactionIds);
+            transactionRepository.flush(); // 즉시 반영
+
+            return chunk.size();
+        } catch (Exception e) {
+            log.warn("참조 테이블 포함 청크 삭제 실패, 개별 삭제 시도: {}", e.getMessage());
+
+            // 개별 삭제 시도
+            List<Transaction> chunk = transactionRepository.findByStatus(status,
+                    org.springframework.data.domain.PageRequest.of(0, Math.min(limit, 1000)))
+                    .getContent();
+
+            int deletedCount = 0;
+            for (Transaction transaction : chunk) {
+                try {
+                    // 참조 데이터 개별 삭제
+                    fraudDetectionResultRepository.findByTransaction_Id(transaction.getId())
+                            .ifPresent(fraudDetectionResultRepository::delete);
+
+                    List<com.credit.card.fraud.detection.transactions.entity.UserReport> reports =
+                            userReportRepository.findByTransaction_IdOrderByCreatedAtDesc(transaction.getId());
+                    userReportRepository.deleteAll(reports);
+
+                    // 트랜잭션 삭제
                     transactionRepository.delete(transaction);
                     deletedCount++;
                 } catch (Exception ex) {
