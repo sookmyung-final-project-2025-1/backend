@@ -111,7 +111,7 @@ jobs:
           
           # Health check - 앱 먼저 확인
           echo "Checking application health..."
-          for i in {1..36}; do
+          for i in {1..24}; do
             if curl -fsSLk http://localhost:8080/actuator/health >/dev/null 2>&1; then
               echo "✅ Application is healthy"
           
