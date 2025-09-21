@@ -1,4 +1,4 @@
-package com.credit.card.fraud.detection.config;
+package com.credit.card.fraud.detection.global.config;
 
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.mail.MailSenderAutoConfiguration;
