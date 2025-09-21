@@ -7,6 +7,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -39,6 +40,24 @@ public class GlobalExceptionHandler {
                 .build();
 
         log.warn("입력 검증 실패: {}", errors);
+        return ResponseEntity.badRequest()
+                .header("Content-Type", "application/json;charset=UTF-8")
+                .body(errorResponse);
+    }
+
+    /**
+     * 파일 업로드 크기 초과 예외 처리
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException ex) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Business Logic Error")
+                .message("Maximum upload size exceeded")
+                .build();
+
+        log.warn("파일 업로드 크기 초과: {}", ex.getMessage());
         return ResponseEntity.badRequest()
                 .header("Content-Type", "application/json;charset=UTF-8")
                 .body(errorResponse);
