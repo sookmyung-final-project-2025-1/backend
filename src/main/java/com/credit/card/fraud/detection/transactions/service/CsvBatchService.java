@@ -406,7 +406,7 @@ public class CsvBatchService {
                     }
                 }
 
-            } while (deletedInChunk > 0 && totalDeleted < pendingCount);
+            } while (deletedInChunk > 0);
 
             log.info("배치 데이터 삭제 완료: {} 건의 거래 삭제 ({} 회 반복)", totalDeleted, iteration);
 
