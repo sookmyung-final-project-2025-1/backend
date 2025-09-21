@@ -317,14 +317,14 @@ public class CsvBatchService {
     }
 
     private void updateJobStatus(String jobId, String status, int total, int processed, int successful, int failed, String error) {
-        Map<String, Object> jobStatus = new HashMap<>();
+        Map<String, String> jobStatus = new HashMap<>();
         jobStatus.put("jobId", jobId);
         jobStatus.put("status", status);
-        jobStatus.put("totalRecords", total);
-        jobStatus.put("processedRecords", processed);
-        jobStatus.put("successfulRecords", successful);
-        jobStatus.put("failedRecords", failed);
-        jobStatus.put("progressPercentage", total > 0 ? (double) processed / total * 100 : 0.0);
+        jobStatus.put("totalRecords", String.valueOf(total));
+        jobStatus.put("processedRecords", String.valueOf(processed));
+        jobStatus.put("successfulRecords", String.valueOf(successful));
+        jobStatus.put("failedRecords", String.valueOf(failed));
+        jobStatus.put("progressPercentage", String.valueOf(total > 0 ? (double) processed / total * 100 : 0.0));
         jobStatus.put("lastUpdated", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         jobStatus.put("completionMessage", error != null ? error : "");
 
@@ -337,7 +337,31 @@ public class CsvBatchService {
         Map<String, Object> result = new HashMap<>();
 
         for (Map.Entry<Object, Object> entry : rawData.entrySet()) {
-            result.put(entry.getKey().toString(), entry.getValue());
+            String key = entry.getKey().toString();
+            String value = entry.getValue().toString();
+
+            // 숫자 필드들을 적절한 타입으로 변환
+            switch (key) {
+                case "totalRecords":
+                case "processedRecords":
+                case "successfulRecords":
+                case "failedRecords":
+                    try {
+                        result.put(key, Integer.parseInt(value));
+                    } catch (NumberFormatException e) {
+                        result.put(key, 0);
+                    }
+                    break;
+                case "progressPercentage":
+                    try {
+                        result.put(key, Double.parseDouble(value));
+                    } catch (NumberFormatException e) {
+                        result.put(key, 0.0);
+                    }
+                    break;
+                default:
+                    result.put(key, value);
+            }
         }
 
         return result;

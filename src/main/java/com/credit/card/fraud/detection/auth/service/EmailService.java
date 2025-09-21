@@ -130,7 +130,7 @@ public class EmailService {
     public int getVerificationRemainingMinutes(String email) {
         String verifiedKey = EMAIL_VERIFIED_PREFIX + email;
         Long expire = redisTemplate.getExpire(verifiedKey, TimeUnit.MINUTES);
-        return expire != null ? expire.intValue() : 0;
+        return expire != null && expire >= 0 ? expire.intValue() : 0;
     }
 
     /**
@@ -146,6 +146,6 @@ public class EmailService {
     public int getExpirationSeconds(String email) {
         String key = EMAIL_VERIFICATION_PREFIX + email;
         Long expire = redisTemplate.getExpire(key, TimeUnit.SECONDS);
-        return expire != null ? expire.intValue() : 0;
+        return expire != null && expire >= 0 ? expire.intValue() : 0;
     }
 }

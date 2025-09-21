@@ -39,11 +39,14 @@ public class RedisConfig {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
 
-        // 직렬화 설정
+        // 직렬화 설정 - String을 기본으로 하되 Object도 처리 가능하도록
         template.setKeySerializer(new StringRedisSerializer());
-        template.setValueSerializer(new StringRedisSerializer());
+        template.setValueSerializer(new GenericJackson2JsonRedisSerializer());
         template.setHashKeySerializer(new StringRedisSerializer());
         template.setHashValueSerializer(new StringRedisSerializer());
+
+        // 기본 serializer 설정
+        template.setDefaultSerializer(new StringRedisSerializer());
 
         template.afterPropertiesSet();
         return template;
