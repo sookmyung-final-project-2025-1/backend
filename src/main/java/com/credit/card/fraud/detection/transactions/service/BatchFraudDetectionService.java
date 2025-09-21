@@ -135,25 +135,15 @@ public class BatchFraudDetectionService {
             boolean hasMore = true;
 
             while (hasMore) {
-                Pageable pageable = PageRequest.of(pageNumber, PROCESSING_BATCH_SIZE);
+                List<Transaction> transactions = processTransactionChunkWithConnection(pageNumber);
 
-                // 먼저 detectionResults를 포함해서 로딩
-                List<Transaction> transactionsWithDetectionResults = transactionRepository.findPendingTransactionsWithDetectionResults(pageable);
-
-                // 그 다음 같은 거래들의 reports를 로딩 (이미 1차 캐시에 있는 엔티티들에 추가됨)
-                if (!transactionsWithDetectionResults.isEmpty()) {
-                    transactionRepository.findPendingTransactionsWithReports(pageable);
-                }
-
-                Page<Transaction> pendingTransactions = new PageImpl<>(transactionsWithDetectionResults, pageable, transactionsWithDetectionResults.size());
-
-                if (!pendingTransactions.hasContent()) {
+                if (transactions.isEmpty()) {
                     hasMore = false;
                     continue;
                 }
 
                 // 현재 청크 처리 (배치 최적화)
-                List<Transaction> processedTransactions = transactionService.processBatchTransactions(pendingTransactions.getContent());
+                List<Transaction> processedTransactions = transactionService.processBatchTransactions(transactions);
                 totalProcessed.addAndGet(processedTransactions.size());
 
                 // 처리 상태 로깅 (더 자주)
@@ -164,7 +154,7 @@ public class BatchFraudDetectionService {
                         progress, totalProcessed.get(), totalPending, remaining);
                 }
 
-                hasMore = pendingTransactions.hasNext();
+                hasMore = transactions.size() >= PROCESSING_BATCH_SIZE;
                 pageNumber++;
 
                 // 메모리 정리를 위한 짧은 대기 (더 자주)
@@ -188,6 +178,29 @@ public class BatchFraudDetectionService {
         }
 
         return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * 트랜잭션 범위에서 연관 데이터와 함께 거래 로드
+     */
+    @Transactional(readOnly = true)
+    protected List<Transaction> processTransactionChunkWithConnection(int pageNumber) {
+        Pageable pageable = PageRequest.of(pageNumber, PROCESSING_BATCH_SIZE);
+
+        try {
+            // 먼저 detectionResults를 포함해서 로딩
+            List<Transaction> transactionsWithDetectionResults = transactionRepository.findPendingTransactionsWithDetectionResults(pageable);
+
+            // 그 다음 같은 거래들의 reports를 로딩 (이미 1차 캐시에 있는 엔티티들에 추가됨)
+            if (!transactionsWithDetectionResults.isEmpty()) {
+                transactionRepository.findPendingTransactionsWithReports(pageable);
+            }
+
+            return transactionsWithDetectionResults;
+        } catch (Exception e) {
+            log.error("거래 청크 로딩 실패 (페이지: {}): {}", pageNumber, e.getMessage());
+            return List.of();
+        }
     }
 
     /**
