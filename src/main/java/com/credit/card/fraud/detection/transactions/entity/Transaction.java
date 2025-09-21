@@ -104,7 +104,8 @@ public class Transaction extends BaseEntity {
         PENDING,    // 처리 대기
         PROCESSED,  // 처리 완료
         FAILED,     // 처리 실패
-        BLOCKED     // 차단됨
+        BLOCKED,    // 차단됨
+        ERROR       // 오류 발생
     }
 
     /**

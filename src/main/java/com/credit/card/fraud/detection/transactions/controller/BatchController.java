@@ -1,6 +1,7 @@
 package com.credit.card.fraud.detection.transactions.controller;
 
 import com.credit.card.fraud.detection.transactions.service.CsvBatchService;
+import com.credit.card.fraud.detection.transactions.service.BatchFraudDetectionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/transactions/batch")
@@ -19,6 +21,7 @@ import java.util.Map;
 public class BatchController {
 
     private final CsvBatchService csvBatchService;
+    private final BatchFraudDetectionService batchFraudDetectionService;
 
     @PostMapping("/upload")
     @Operation(summary = "CSV 파일 업로드", description = "IEEE 신용카드 데이터셋 CSV 파일을 업로드하여 배치 처리를 시작합니다")
@@ -69,6 +72,65 @@ public class BatchController {
             log.error("배치 상태 조회 실패: {}", jobId, e);
             return ResponseEntity.internalServerError().body(Map.of(
                 "error", "상태 조회 실패: " + e.getMessage()
+            ));
+        }
+    }
+
+    @PostMapping("/process-fraud-detection")
+    @Operation(summary = "PENDING 상태 거래 사기 탐지 처리", description = "업로드된 PENDING 상태 거래들에 대해 사기 탐지를 수행합니다")
+    public ResponseEntity<Map<String, Object>> processFraudDetection(
+            @RequestParam(value = "limit", required = false) Integer limit) {
+        try {
+            long pendingCount = batchFraudDetectionService.getPendingTransactionCount();
+
+            if (pendingCount == 0) {
+                return ResponseEntity.ok(Map.of(
+                    "message", "처리할 PENDING 상태 거래가 없습니다",
+                    "pendingCount", 0
+                ));
+            }
+
+            CompletableFuture<Integer> futureResult;
+            if (limit != null && limit > 0) {
+                futureResult = batchFraudDetectionService.processPendingTransactions(limit);
+            } else {
+                batchFraudDetectionService.processPendingTransactions();
+                futureResult = CompletableFuture.completedFuture((int) pendingCount);
+            }
+
+            Map<String, Object> response = Map.of(
+                "message", "사기 탐지 처리가 시작되었습니다",
+                "pendingCount", pendingCount,
+                "requestedLimit", limit != null ? limit : "전체"
+            );
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("사기 탐지 처리 시작 실패", e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                "error", "사기 탐지 처리 시작 실패: " + e.getMessage()
+            ));
+        }
+    }
+
+    @GetMapping("/pending-count")
+    @Operation(summary = "PENDING 상태 거래 개수 조회", description = "사기 탐지 처리를 기다리고 있는 거래의 개수를 조회합니다")
+    public ResponseEntity<Map<String, Object>> getPendingCount() {
+        try {
+            long pendingCount = batchFraudDetectionService.getPendingTransactionCount();
+
+            return ResponseEntity.ok(Map.of(
+                "pendingCount", pendingCount,
+                "message", pendingCount > 0 ?
+                    "사기 탐지 처리를 기다리는 거래가 " + pendingCount + "건 있습니다" :
+                    "처리할 PENDING 상태 거래가 없습니다"
+            ));
+
+        } catch (Exception e) {
+            log.error("PENDING 거래 개수 조회 실패", e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                "error", "PENDING 거래 개수 조회 실패: " + e.getMessage()
             ));
         }
     }

@@ -135,4 +135,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
             "ORDER BY COUNT(t) DESC")
     List<Object[]> getMerchantStatistics(@Param("startTime") LocalDateTime startTime,
                                          @Param("endTime") LocalDateTime endTime);
+
+    // 상태별 거래 조회
+    Page<Transaction> findByStatus(Transaction.TransactionStatus status, Pageable pageable);
+
+    // 상태별 거래 개수 조회
+    Long countByStatus(Transaction.TransactionStatus status);
 }

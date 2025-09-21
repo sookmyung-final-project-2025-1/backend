@@ -99,7 +99,13 @@ public class CsvBatchService {
             }
 
             // 완료 상태 업데이트
-            updateJobStatus(jobId, "COMPLETED", totalRecords, totalRecords, successfulRecords, failedRecords, null);
+            String completionMessage = String.format(
+                "CSV 파일 업로드 완료. 성공: %d건, 실패: %d건. " +
+                "PENDING 상태로 저장되었습니다. " +
+                "사기 탐지를 위해 /api/transactions/batch/process-fraud-detection 엔드포인트를 호출하세요.",
+                successfulRecords, failedRecords
+            );
+            updateJobStatus(jobId, "COMPLETED", totalRecords, totalRecords, successfulRecords, failedRecords, completionMessage);
 
             log.info("CSV 배치 처리 완료 - 파일: {}, 총: {} 건, 성공: {} 건, 실패: {} 건",
                     file.getOriginalFilename(), totalRecords, successfulRecords, failedRecords);
@@ -161,7 +167,7 @@ public class CsvBatchService {
                     .goldLabel(goldLabel)
                     .anonymizedFeatures(anonymizedFeatures)
                     .deviceFingerprint(extractDeviceInfo(row))
-                    .status(Transaction.TransactionStatus.PROCESSED)
+                    .status(Transaction.TransactionStatus.PENDING)
                     .currency("USD")
                     .build();
 
@@ -264,6 +270,10 @@ public class CsvBatchService {
     @Transactional
     private int saveBatch(List<Transaction> transactions) {
         try {
+            // 배치 처리시에는 사기 탐지 없이 순수 데이터만 저장
+            // status를 PENDING으로 설정하여 나중에 별도 처리 가능하도록 함
+            transactions.forEach(t -> t.setStatus(Transaction.TransactionStatus.PENDING));
+
             List<Transaction> saved = transactionRepository.saveAll(transactions);
             return saved.size();
         } catch (Exception e) {
@@ -273,6 +283,7 @@ public class CsvBatchService {
             int successCount = 0;
             for (Transaction transaction : transactions) {
                 try {
+                    transaction.setStatus(Transaction.TransactionStatus.PENDING);
                     transactionRepository.save(transaction);
                     successCount++;
                 } catch (Exception ex) {
@@ -294,7 +305,7 @@ public class CsvBatchService {
         jobStatus.put("failedRecords", failed);
         jobStatus.put("progressPercentage", total > 0 ? (double) processed / total * 100 : 0.0);
         jobStatus.put("lastUpdated", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        jobStatus.put("errorMessage", error != null ? error : "");
+        jobStatus.put("completionMessage", error != null ? error : "");
 
         redisTemplate.opsForHash().putAll(JOB_STATUS_PREFIX + jobId, jobStatus);
         redisTemplate.expire(JOB_STATUS_PREFIX + jobId, 2, TimeUnit.HOURS); // 2시간 후 만료
