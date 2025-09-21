@@ -87,6 +87,7 @@ server:
     keep-alive-timeout: 60000   # Keep-Alive 타임아웃
     max-keep-alive-requests: 100 # Keep-Alive 요청 수
     max-connections: 8192
+    max-http-post-size: 2147483648  # 2GB로 설정
     threads:
       max: 200
       min-spare: 10
