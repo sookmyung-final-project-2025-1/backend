@@ -114,6 +114,8 @@ jobs:
           for i in {1..36}; do
             if curl -fsSLk http://localhost:8080/actuator/health >/dev/null 2>&1; then
               echo "✅ Application is healthy"
+          
+              sudo docker compose up nginx -d
               break
             fi
             echo "⏳ Waiting for app... ($i/24)"
