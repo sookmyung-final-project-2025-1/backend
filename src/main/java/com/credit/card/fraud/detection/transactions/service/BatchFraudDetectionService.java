@@ -15,6 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 @RequiredArgsConstructor
@@ -24,18 +28,20 @@ public class BatchFraudDetectionService {
     private final TransactionRepository transactionRepository;
     private final TransactionService transactionService;
 
-    private static final int PROCESSING_BATCH_SIZE = 100;
+    private static final int PROCESSING_BATCH_SIZE = 500;  // 배치 크기 증가
+    private static final int PARALLEL_THREADS = 4;  // 병렬 처리 스레드 수
 
     /**
-     * PENDING 상태의 거래들에 대해 비동기로 사기 탐지 수행
+     * PENDING 상태의 거래들에 대해 병렬로 사기 탐지 수행 (최적화된 버전)
      */
     @Async
     @CacheEvict(value = "pendingCount", key = "'pending_transaction_count'")
     public CompletableFuture<Void> processPendingTransactions() {
-        log.info("시작: PENDING 상태 거래 사기 탐지 처리");
+        log.info("시작: PENDING 상태 거래 사기 탐지 처리 (병렬 처리)");
 
-        int processedCount = 0;
-        int failedCount = 0;
+        AtomicInteger processedCount = new AtomicInteger(0);
+        AtomicInteger failedCount = new AtomicInteger(0);
+        ExecutorService executor = Executors.newFixedThreadPool(PARALLEL_THREADS);
 
         try {
             Pageable pageable = PageRequest.of(0, PROCESSING_BATCH_SIZE);
@@ -48,37 +54,49 @@ public class BatchFraudDetectionService {
                 if (pendingTransactions.hasContent()) {
                     List<Transaction> transactions = pendingTransactions.getContent();
 
-                    for (Transaction transaction : transactions) {
-                        try {
-                            // 개별 거래에 대해 사기 탐지 수행
-                            transactionService.processAndDetectFraud(transaction);
-                            processedCount++;
+                    // 병렬 처리를 위해 CompletableFuture 리스트 생성
+                    List<CompletableFuture<Void>> futures = transactions.stream()
+                        .map(transaction -> CompletableFuture.runAsync(() -> {
+                            try {
+                                transactionService.processAndDetectFraud(transaction);
+                                int processed = processedCount.incrementAndGet();
 
-                            if (processedCount % 50 == 0) {
-                                log.info("사기 탐지 처리 진행: {} 건 완료", processedCount);
+                                if (processed % 100 == 0) {
+                                    log.info("사기 탐지 처리 진행: {} 건 완료", processed);
+                                }
+
+                            } catch (Exception e) {
+                                failedCount.incrementAndGet();
+                                log.error("거래 {} 사기 탐지 실패: {}",
+                                    transaction.getId(), e.getMessage());
+                                markTransactionAsError(transaction);
                             }
+                        }, executor))
+                        .toList();
 
-                        } catch (Exception e) {
-                            failedCount++;
-                            log.error("거래 {} 사기 탐지 실패: {}",
-                                transaction.getId(), e.getMessage());
-
-                            // 실패한 거래는 ERROR 상태로 표시
-                            markTransactionAsError(transaction);
-                        }
-                    }
+                    // 현재 배치의 모든 작업 완료 대기
+                    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
                 }
 
-                // 다음 페이지로
                 pageable = pageable.next();
 
             } while (pendingTransactions.hasNext());
 
             log.info("완료: PENDING 상태 거래 사기 탐지 처리 - 처리: {}, 실패: {}",
-                processedCount, failedCount);
+                processedCount.get(), failedCount.get());
 
         } catch (Exception e) {
             log.error("배치 사기 탐지 처리 중 오류 발생", e);
+        } finally {
+            executor.shutdown();
+            try {
+                if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
         }
 
         return CompletableFuture.completedFuture(null);

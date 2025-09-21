@@ -22,8 +22,8 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
 
     hikari:
-      maximum-pool-size: 20
-      minimum-idle: 5
+      maximum-pool-size: 50  # 병렬 처리를 위해 증가
+      minimum-idle: 10
       idle-timeout: 300000
       connection-timeout: 60000  # 60초로 연장
       max-lifetime: 1200000
@@ -139,10 +139,10 @@ model:
   service:
     enabled: ${MODEL_SERVICE_ENABLED:true}
     url: ${MODEL_SERVICE_URL:http://model:8000}
-    timeout: ${MODEL_SERVICE_TIMEOUT:30000}
+    timeout: ${MODEL_SERVICE_TIMEOUT:120000}  # 2분으로 연장
     retry:
       max-attempts: ${MODEL_SERVICE_RETRY_MAX_ATTEMPTS:3}
-      delay: ${MODEL_SERVICE_RETRY_DELAY:1000}
+      delay: ${MODEL_SERVICE_RETRY_DELAY:2000}  # 2초로 연장
     github:
       data-repo: ${MODEL_DATA_REPO:sookmyung-final-project-2025-1/Data}
       default-version: ${MODEL_DEFAULT_VERSION:v1.0.0}
