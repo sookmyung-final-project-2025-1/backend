@@ -3,6 +3,7 @@ package com.credit.card.fraud.detection.transactions.repository;
 import com.credit.card.fraud.detection.transactions.entity.Transaction;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -140,12 +141,17 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     // 상태별 거래 조회
     Page<Transaction> findByStatus(Transaction.TransactionStatus status, Pageable pageable);
 
-    // 배치 처리용 최적화된 쿼리 (JOIN FETCH 사용)
+    // 배치 처리용 최적화된 쿼리 (detectionResults만)
     @Query("SELECT t FROM Transaction t " +
            "LEFT JOIN FETCH t.detectionResults " +
-           "LEFT JOIN FETCH t.reports " +
            "WHERE t.status = :status")
     List<Transaction> findByStatusWithDetectionResults(@Param("status") Transaction.TransactionStatus status, Pageable pageable);
+
+    // 배치 처리용 최적화된 쿼리 (reports만)
+    @Query("SELECT t FROM Transaction t " +
+           "LEFT JOIN FETCH t.reports " +
+           "WHERE t.status = :status")
+    List<Transaction> findByStatusWithReports(@Param("status") Transaction.TransactionStatus status, Pageable pageable);
 
     // 배치 처리용 PENDING 거래 ID만 조회 (페이징 지원)
     @Query("SELECT t.id FROM Transaction t " +
@@ -153,13 +159,34 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
            "ORDER BY t.id")
     List<Long> findPendingTransactionIds(Pageable pageable);
 
-    // ID 리스트로 연관 데이터와 함께 조회
+    // ID 리스트로 연관 데이터와 함께 조회 (detectionResults만)
     @Query("SELECT DISTINCT t FROM Transaction t " +
            "LEFT JOIN FETCH t.detectionResults " +
-           "LEFT JOIN FETCH t.reports " +
            "WHERE t.id IN :ids " +
            "ORDER BY t.id")
     List<Transaction> findTransactionsWithAssociationsByIds(@Param("ids") List<Long> ids);
+
+    // ID 리스트로 reports만 함께 조회
+    @Query("SELECT DISTINCT t FROM Transaction t " +
+           "LEFT JOIN FETCH t.reports " +
+           "WHERE t.id IN :ids " +
+           "ORDER BY t.id")
+    List<Transaction> findTransactionsWithReportsByIds(@Param("ids") List<Long> ids);
+
+    // 기본 Transaction 엔티티만 조회 (연관관계 없이)
+    @Query("SELECT t FROM Transaction t " +
+           "WHERE t.id IN :ids " +
+           "ORDER BY t.id")
+    List<Transaction> findTransactionsByIds(@Param("ids") List<Long> ids);
+
+    // EntityGraph를 사용한 안전한 다중 연관관계 로드 (필요시 사용)
+    @EntityGraph(attributePaths = {"detectionResults"})
+    @Query("SELECT t FROM Transaction t WHERE t.id IN :ids ORDER BY t.id")
+    List<Transaction> findTransactionsWithDetectionResultsByIds(@Param("ids") List<Long> ids);
+
+    @EntityGraph(attributePaths = {"reports"})
+    @Query("SELECT t FROM Transaction t WHERE t.id IN :ids ORDER BY t.id")
+    List<Transaction> findTransactionsWithReportsByIdsEntityGraph(@Param("ids") List<Long> ids);
 
     // 배치 처리용 PENDING 거래 조회 (기본 엔티티만)
     @Query("SELECT t FROM Transaction t " +

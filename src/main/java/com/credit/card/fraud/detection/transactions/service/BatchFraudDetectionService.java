@@ -56,7 +56,7 @@ public class BatchFraudDetectionService {
                 transactionIds = transactionRepository.findPendingTransactionIds(pageable);
 
                 if (!transactionIds.isEmpty()) {
-                    List<Transaction> transactions = transactionRepository.findTransactionsWithAssociationsByIds(transactionIds);
+                    List<Transaction> transactions = transactionRepository.findTransactionsByIds(transactionIds);
                     pendingTransactions = new PageImpl<>(transactions, pageable, transactions.size());
 
                     // 병렬 처리를 위해 CompletableFuture 리스트 생성
@@ -219,7 +219,8 @@ public class BatchFraudDetectionService {
                     transactionIds.size(), PROCESSING_BATCH_SIZE);
             }
 
-            return transactionRepository.findTransactionsWithAssociationsByIds(transactionIds);
+            // 안전한 방법: 기본 엔티티만 먼저 로드
+            return transactionRepository.findTransactionsByIds(transactionIds);
         } catch (Exception e) {
             log.error("거래 청크 로딩 실패 (페이지: {}): {}", pageNumber, e.getMessage());
             throw e; // 예외를 다시 던져서 트랜잭션이 제대로 롤백되도록 함
@@ -283,7 +284,7 @@ public class BatchFraudDetectionService {
             List<Long> transactionIds = transactionRepository.findPendingTransactionIds(pageable);
 
             while (!transactionIds.isEmpty() && processedCount < limit) {
-                List<Transaction> transactions = transactionRepository.findTransactionsWithAssociationsByIds(transactionIds);
+                List<Transaction> transactions = transactionRepository.findTransactionsByIds(transactionIds);
 
                 for (Transaction transaction : transactions) {
                     if (processedCount >= limit) break;
