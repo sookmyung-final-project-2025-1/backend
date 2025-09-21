@@ -4,6 +4,7 @@ import com.credit.card.fraud.detection.transactions.entity.Transaction;
 import com.credit.card.fraud.detection.transactions.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,7 @@ public class CsvBatchService {
     }
 
     @Async
+    @CacheEvict(value = "pendingCount", key = "'pending_transaction_count'")
     public void processCsvFileAsync(MultipartFile file, String jobId) {
         int totalRecords = 0;
         int successfulRecords = 0;
@@ -342,6 +344,7 @@ public class CsvBatchService {
     }
 
     @Transactional
+    @CacheEvict(value = "pendingCount", key = "'pending_transaction_count'")
     public long clearBatchData() {
         try {
             log.info("배치 업로드 데이터 삭제 시작");

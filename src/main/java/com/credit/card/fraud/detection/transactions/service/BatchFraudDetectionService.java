@@ -4,6 +4,8 @@ import com.credit.card.fraud.detection.transactions.entity.Transaction;
 import com.credit.card.fraud.detection.transactions.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -28,6 +30,7 @@ public class BatchFraudDetectionService {
      * PENDING 상태의 거래들에 대해 비동기로 사기 탐지 수행
      */
     @Async
+    @CacheEvict(value = "pendingCount", key = "'pending_transaction_count'")
     public CompletableFuture<Void> processPendingTransactions() {
         log.info("시작: PENDING 상태 거래 사기 탐지 처리");
 
@@ -85,6 +88,7 @@ public class BatchFraudDetectionService {
      * 특정 개수만큼 PENDING 거래 처리
      */
     @Async
+    @CacheEvict(value = "pendingCount", key = "'pending_transaction_count'")
     public CompletableFuture<Integer> processPendingTransactions(int limit) {
         log.info("시작: PENDING 상태 거래 {} 건 처리", limit);
 
@@ -136,14 +140,16 @@ public class BatchFraudDetectionService {
     }
 
     /**
-     * PENDING 상태 거래 개수 조회
+     * PENDING 상태 거래 개수 조회 (Redis 캐시 적용)
      */
+    @Cacheable(value = "pendingCount", key = "'pending_transaction_count'")
     public long getPendingTransactionCount() {
+        log.debug("데이터베이스에서 PENDING 거래 개수 조회 중...");
         return transactionRepository.countByStatus(Transaction.TransactionStatus.PENDING);
     }
 
     @Transactional
-    private void markTransactionAsError(Transaction transaction) {
+    protected void markTransactionAsError(Transaction transaction) {
         try {
             transaction.setStatus(Transaction.TransactionStatus.ERROR);
             transactionRepository.save(transaction);
