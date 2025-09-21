@@ -80,6 +80,8 @@ jobs:
           MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
           SPRING_PROFILES_ACTIVE=production
           SPRING_JPA_HIBERNATE_DDL_AUTO=update
+          SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=3
+          SPRING_DATASOURCE_HIKARI_LEAK_DETECTION_THRESHOLD=300000
           SPRING_JPA_SHOW_SQL=true
           MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always
           MODEL_SERVICE_ENABLED=true
@@ -109,7 +111,7 @@ jobs:
           
           # Health check - 앱 먼저 확인
           echo "Checking application health..."
-          for i in {1..24}; do
+          for i in {1..36}; do
             if curl -fsSLk http://localhost:8080/actuator/health >/dev/null 2>&1; then
               echo "✅ Application is healthy"
               break
