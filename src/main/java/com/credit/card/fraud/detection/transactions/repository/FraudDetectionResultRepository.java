@@ -117,4 +117,11 @@ public interface FraudDetectionResultRepository extends JpaRepository<FraudDetec
     Long countFraudPredictions(@Param("startTime") LocalDateTime startTime,
                                @Param("endTime") LocalDateTime endTime);
 
+    // 배치 삭제를 위한 메서드들
+    @Query("DELETE FROM FraudDetectionResult fdr WHERE fdr.transaction.id IN :transactionIds")
+    void deleteByTransactionIds(@Param("transactionIds") List<Long> transactionIds);
+
+    @Query("SELECT fdr.transaction.id FROM FraudDetectionResult fdr WHERE fdr.transaction.id IN :transactionIds")
+    List<Long> findExistingTransactionIds(@Param("transactionIds") List<Long> transactionIds);
+
 }

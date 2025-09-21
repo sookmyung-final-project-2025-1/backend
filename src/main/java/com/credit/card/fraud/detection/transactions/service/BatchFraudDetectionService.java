@@ -28,7 +28,7 @@ public class BatchFraudDetectionService {
     private final TransactionRepository transactionRepository;
     private final TransactionService transactionService;
 
-    private static final int PROCESSING_BATCH_SIZE = 5000;  // 50만건 처리를 위해 더 큰 배치
+    private static final int PROCESSING_BATCH_SIZE = 10000; // 성능 최적화를 위해 배치 크기 증가
     private static final int PARALLEL_THREADS = 16;  // 병렬 처리 스레드 수 추가 증가
     private static final int EXECUTOR_SHUTDOWN_TIMEOUT = 600;  // 10분 대기
     private static final int PROGRESS_LOG_INTERVAL = 10000;  // 1만건마다 진행 로그

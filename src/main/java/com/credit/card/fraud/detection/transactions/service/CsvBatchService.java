@@ -33,7 +33,7 @@ public class CsvBatchService {
     private final FraudDetectionResultRepository fraudDetectionResultRepository;
     private final UserReportRepository userReportRepository;
 
-    private static final int BATCH_SIZE = 5000;
+    private static final int BATCH_SIZE = 10000; // 성능 최적화를 위해 배치 크기 증가
     private static final String JOB_STATUS_PREFIX = "batch_job:";
 
     public String startBatchProcessing(MultipartFile file) {
@@ -553,27 +553,41 @@ public class CsvBatchService {
                     .map(Transaction::getId)
                     .toList();
 
-            // 1. 먼저 참조 테이블들의 데이터 삭제
+            // 1. 먼저 참조 테이블들의 데이터 삭제 (배치 처리)
             log.debug("참조 테이블 데이터 삭제 중: {} 건", transactionIds.size());
 
-            // FraudDetectionResult 삭제
-            for (Long transactionId : transactionIds) {
-                try {
-                    fraudDetectionResultRepository.findByTransaction_Id(transactionId)
-                            .ifPresent(fraudDetectionResultRepository::delete);
-                } catch (Exception e) {
-                    log.debug("FraudDetectionResult 삭제 실패: transaction_id={}", transactionId);
+            // FraudDetectionResult 배치 삭제
+            try {
+                fraudDetectionResultRepository.deleteByTransactionIds(transactionIds);
+                log.debug("FraudDetectionResult 배치 삭제 완료: {} 건", transactionIds.size());
+            } catch (Exception e) {
+                log.debug("FraudDetectionResult 배치 삭제 실패, 개별 삭제 시도: {}", e.getMessage());
+                // 배치 삭제 실패 시 개별 삭제
+                for (Long transactionId : transactionIds) {
+                    try {
+                        fraudDetectionResultRepository.findByTransaction_Id(transactionId)
+                                .ifPresent(fraudDetectionResultRepository::delete);
+                    } catch (Exception ex) {
+                        log.debug("FraudDetectionResult 개별 삭제 실패: transaction_id={}", transactionId);
+                    }
                 }
             }
 
-            // UserReport 삭제
-            for (Long transactionId : transactionIds) {
-                try {
-                    List<com.credit.card.fraud.detection.transactions.entity.UserReport> reports =
-                            userReportRepository.findByTransaction_IdOrderByCreatedAtDesc(transactionId);
-                    userReportRepository.deleteAll(reports);
-                } catch (Exception e) {
-                    log.debug("UserReport 삭제 실패: transaction_id={}", transactionId);
+            // UserReport 배치 삭제
+            try {
+                userReportRepository.deleteByTransactionIds(transactionIds);
+                log.debug("UserReport 배치 삭제 완료: {} 건", transactionIds.size());
+            } catch (Exception e) {
+                log.debug("UserReport 배치 삭제 실패, 개별 삭제 시도: {}", e.getMessage());
+                // 배치 삭제 실패 시 개별 삭제
+                for (Long transactionId : transactionIds) {
+                    try {
+                        List<com.credit.card.fraud.detection.transactions.entity.UserReport> reports =
+                                userReportRepository.findByTransaction_IdOrderByCreatedAtDesc(transactionId);
+                        userReportRepository.deleteAll(reports);
+                    } catch (Exception ex) {
+                        log.debug("UserReport 개별 삭제 실패: transaction_id={}", transactionId);
+                    }
                 }
             }
 
@@ -585,27 +599,52 @@ public class CsvBatchService {
         } catch (Exception e) {
             log.warn("참조 테이블 포함 청크 삭제 실패, 개별 삭제 시도: {}", e.getMessage());
 
-            // 개별 삭제 시도
+            // 개별 삭제 시도 (배치 처리로 최적화)
             List<Transaction> chunk = transactionRepository.findByStatus(status,
                     org.springframework.data.domain.PageRequest.of(0, Math.min(limit, 1000)))
                     .getContent();
 
+            if (chunk.isEmpty()) {
+                return 0;
+            }
+
+            List<Long> fallbackTransactionIds = chunk.stream()
+                    .map(Transaction::getId)
+                    .toList();
+
             int deletedCount = 0;
-            for (Transaction transaction : chunk) {
-                try {
-                    // 참조 데이터 개별 삭제
-                    fraudDetectionResultRepository.findByTransaction_Id(transaction.getId())
-                            .ifPresent(fraudDetectionResultRepository::delete);
+            try {
+                // 배치 삭제 재시도
+                log.debug("개별 삭제 모드에서 배치 삭제 재시도: {} 건", fallbackTransactionIds.size());
 
-                    List<com.credit.card.fraud.detection.transactions.entity.UserReport> reports =
-                            userReportRepository.findByTransaction_IdOrderByCreatedAtDesc(transaction.getId());
-                    userReportRepository.deleteAll(reports);
+                // 참조 테이블 배치 삭제
+                fraudDetectionResultRepository.deleteByTransactionIds(fallbackTransactionIds);
+                userReportRepository.deleteByTransactionIds(fallbackTransactionIds);
 
-                    // 트랜잭션 삭제
-                    transactionRepository.delete(transaction);
-                    deletedCount++;
-                } catch (Exception ex) {
-                    log.debug("개별 거래 삭제 실패: ID={}", transaction.getId());
+                // 트랜잭션 배치 삭제
+                transactionRepository.deleteAllById(fallbackTransactionIds);
+                deletedCount = chunk.size();
+
+            } catch (Exception batchEx) {
+                log.debug("배치 삭제 재시도 실패, 완전 개별 삭제: {}", batchEx.getMessage());
+
+                // 완전 개별 삭제
+                for (Transaction transaction : chunk) {
+                    try {
+                        // 참조 데이터 개별 삭제
+                        fraudDetectionResultRepository.findByTransaction_Id(transaction.getId())
+                                .ifPresent(fraudDetectionResultRepository::delete);
+
+                        List<com.credit.card.fraud.detection.transactions.entity.UserReport> reports =
+                                userReportRepository.findByTransaction_IdOrderByCreatedAtDesc(transaction.getId());
+                        userReportRepository.deleteAll(reports);
+
+                        // 트랜잭션 삭제
+                        transactionRepository.delete(transaction);
+                        deletedCount++;
+                    } catch (Exception ex) {
+                        log.debug("개별 거래 삭제 실패: ID={}", transaction.getId());
+                    }
                 }
             }
 

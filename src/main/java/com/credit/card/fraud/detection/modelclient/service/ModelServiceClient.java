@@ -152,7 +152,7 @@ public class ModelServiceClient {
      */
     public Map<String, Object> getModelVersion() {
         try {
-            // GitHub Release에서 실제 버전 조회
+            // GitHub Release에서 실제 버전 조회 (API 호출이 필요한 경우만)
             String latestVersion = getLatestReleaseVersion();
 
             // FastAPI에서 모델 상태 조회
@@ -195,9 +195,17 @@ public class ModelServiceClient {
     }
 
     /**
-     * GitHub Release에서 최신 버전 조회
+     * GitHub Release에서 최신 버전 조회 (배치 처리시 호출 안함)
      */
     public String getLatestReleaseVersion() {
+        // 배치 처리중엔 기본 버전 반환하여 GitHub API 호출 방지
+        return modelServiceProperties.getGithub().getDefaultVersion();
+    }
+
+    /**
+     * 실제 GitHub API에서 최신 버전 조회 (필요시에만 호출)
+     */
+    public String fetchLatestReleaseVersionFromGitHub() {
         try {
             String githubApiUrl = String.format("https://api.github.com/repos/%s/releases/latest",
                     modelServiceProperties.getGithub().getDataRepo());
@@ -290,40 +298,10 @@ public class ModelServiceClient {
     }
 
     /**
-     * 사용 가능한 버전 목록 조회
+     * 사용 가능한 버전 목록 조회 (기본 버전만 반환)
      */
     public List<String> getAvailableVersions() {
-        try {
-            String githubApiUrl = String.format("https://api.github.com/repos/%s/releases",
-                    modelServiceProperties.getGithub().getDataRepo());
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("Accept", "application/vnd.github.v3+json");
-            headers.set("User-Agent", "fraud-detection-backend");
-
-            HttpEntity<String> entity = new HttpEntity<>(headers);
-
-            ResponseEntity<String> response = restTemplate.exchange(
-                    githubApiUrl, HttpMethod.GET, entity, String.class);
-
-            if (response.getStatusCode().is2xxSuccessful()) {
-                JsonNode releases = objectMapper.readTree(response.getBody());
-                List<String> versions = new ArrayList<>();
-
-                for (JsonNode release : releases) {
-                    if (!release.get("draft").asBoolean() && !release.get("prerelease").asBoolean()) {
-                        versions.add(release.get("tag_name").asText());
-                    }
-                }
-
-                return versions;
-            }
-
-        } catch (Exception e) {
-            log.error("Failed to fetch available versions: {}", e.getMessage());
-        }
-
-        return List.of(getLatestReleaseVersion());
+        return List.of(modelServiceProperties.getGithub().getDefaultVersion());
     }
 
     // 스텁 메서드들 (현재 AI 레포 구조상 구현되지 않은 기능들)

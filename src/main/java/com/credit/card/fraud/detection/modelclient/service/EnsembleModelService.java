@@ -222,7 +222,7 @@ public class EnsembleModelService {
             }
 
             // 폴백: GitHub Release에서 최신 버전 조회
-            String latestRelease = modelServiceClient.getLatestReleaseVersion();
+            String latestRelease = modelServiceClient.fetchLatestReleaseVersionFromGitHub();
             if (!"unknown".equals(latestRelease)) {
                 return latestRelease + "-simulation";
             }

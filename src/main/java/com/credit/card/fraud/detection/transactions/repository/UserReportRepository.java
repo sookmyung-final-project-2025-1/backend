@@ -100,4 +100,11 @@ public interface UserReportRepository extends JpaRepository<UserReport, Long> {
             "WHERE ur.updatedAt >= :since " +
             "ORDER BY ur.updatedAt DESC")
     List<UserReport> findRecentActivity(@Param("since") LocalDateTime since);
+
+    // 배치 삭제를 위한 메서드들
+    @Query("DELETE FROM UserReport ur WHERE ur.transaction.id IN :transactionIds")
+    void deleteByTransactionIds(@Param("transactionIds") List<Long> transactionIds);
+
+    @Query("SELECT ur.transaction.id FROM UserReport ur WHERE ur.transaction.id IN :transactionIds GROUP BY ur.transaction.id")
+    List<Long> findExistingTransactionIds(@Param("transactionIds") List<Long> transactionIds);
 }
