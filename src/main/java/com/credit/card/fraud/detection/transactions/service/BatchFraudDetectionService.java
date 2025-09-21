@@ -50,9 +50,10 @@ public class BatchFraudDetectionService {
         try {
             Pageable pageable = PageRequest.of(0, PROCESSING_BATCH_SIZE);
             Page<Transaction> pendingTransactions;
+            List<Long> transactionIds;
 
             do {
-                List<Long> transactionIds = transactionRepository.findPendingTransactionIds(pageable);
+                transactionIds = transactionRepository.findPendingTransactionIds(pageable);
 
                 if (!transactionIds.isEmpty()) {
                     List<Transaction> transactions = transactionRepository.findTransactionsWithAssociationsByIds(transactionIds);
@@ -137,7 +138,21 @@ public class BatchFraudDetectionService {
             boolean hasMore = true;
 
             while (hasMore) {
-                List<Transaction> transactions = processTransactionChunkWithConnection(pageNumber);
+                List<Transaction> transactions;
+                try {
+                    transactions = processTransactionChunkWithConnection(pageNumber);
+                } catch (Exception e) {
+                    log.error("거래 청크 로딩 중 예외 발생 (페이지: {}): {}", pageNumber, e.getMessage());
+                    // 연결 문제 시 잠시 대기 후 재시도
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    pageNumber++;
+                    continue;
+                }
 
                 if (transactions.isEmpty()) {
                     hasMore = false;
@@ -183,9 +198,9 @@ public class BatchFraudDetectionService {
     }
 
     /**
-     * 트랜잭션 범위에서 연관 데이터와 함께 거래 로드
+     * 트랜잭션 범위에서 연관 데이터와 함께 거래 로드 (연결 누수 방지)
      */
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, timeout = 30)
     protected List<Transaction> processTransactionChunkWithConnection(int pageNumber) {
         Pageable pageable = PageRequest.of(pageNumber, PROCESSING_BATCH_SIZE);
 
@@ -197,11 +212,17 @@ public class BatchFraudDetectionService {
                 return List.of();
             }
 
-            // ID 리스트로 연관 데이터와 함께 조회
+            // ID 리스트로 연관 데이터와 함께 조회 (배치로 제한)
+            if (transactionIds.size() > PROCESSING_BATCH_SIZE) {
+                transactionIds = transactionIds.subList(0, PROCESSING_BATCH_SIZE);
+                log.warn("거래 ID 개수가 배치 크기를 초과하여 제한함: {} -> {}",
+                    transactionIds.size(), PROCESSING_BATCH_SIZE);
+            }
+
             return transactionRepository.findTransactionsWithAssociationsByIds(transactionIds);
         } catch (Exception e) {
             log.error("거래 청크 로딩 실패 (페이지: {}): {}", pageNumber, e.getMessage());
-            return List.of();
+            throw e; // 예외를 다시 던져서 트랜잭션이 제대로 롤백되도록 함
         }
     }
 
