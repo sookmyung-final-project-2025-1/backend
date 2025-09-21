@@ -38,24 +38,26 @@ jobs:
       - name: Get latest model release
         id: get_latest_release
         run: |
-          # Data 레포에서 최신 릴리즈 정보 가져오기
-          LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/sookmyung-final-project-2025-1/Data/releases/latest" | \
-            grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4 || echo "v1.2.0")
-          if [ -z "$LATEST_RELEASE" ]; then
-            LATEST_RELEASE="v1.2.0"
-          fi
-          echo "latest_release=$LATEST_RELEASE" >> $GITHUB_OUTPUT
-          echo "Latest model release: $LATEST_RELEASE"
+          echo "Fetching latest release..."
           
-          # MODEL_VERSION 환경변수 설정 (v1.2.0 -> v1)
-          if [[ "$LATEST_RELEASE" =~ ^v([0-9]+)\. ]]; then
-            MODEL_VER="v${BASH_REMATCH[1]}"
-          else
-            MODEL_VER="v1"
+          # API 응답 전체를 확인
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/sookmyung-final-project-2025-1/Data/releases/latest")
+          
+          echo "API Response:"
+          echo "$RESPONSE"
+          
+          # jq 사용
+          LATEST_RELEASE=$(echo "$RESPONSE" | jq -r '.tag_name // "v1.2.0"')
+          
+          echo "Parsed tag_name: $LATEST_RELEASE"
+          
+          if [ -z "$LATEST_RELEASE" ] || [ "$LATEST_RELEASE" = "null" ]; then
+            LATEST_RELEASE="v1.2.3"  # 최신 버전으로 업데이트
           fi
-          echo "model_version=$MODEL_VER" >> $GITHUB_OUTPUT
-          echo "Model version: $MODEL_VER"
+          
+          echo "latest_release=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+          echo "Final release version: $LATEST_RELEASE"
 
       - name: Create production environment
         run: |
