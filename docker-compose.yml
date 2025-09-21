@@ -29,6 +29,12 @@ services:
     image: ${APP_IMAGE:-fraud-detection-app:latest}
     env_file:
       - ${ENV_FILE:-.env}
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          memory: 4G
     environment:
       DB_URL: jdbc:mysql://mysql:3306/fraud_detection?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10
       DB_USERNAME: ${DB_USERNAME:-fraud_user}

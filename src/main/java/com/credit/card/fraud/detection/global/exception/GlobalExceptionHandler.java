@@ -50,18 +50,38 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException ex) {
+
+        // 상세한 에러 정보 수집
+        String maxFileSize = getSpringProperty("spring.servlet.multipart.max-file-size", "알 수 없음");
+        String maxRequestSize = getSpringProperty("spring.servlet.multipart.max-request-size", "알 수 없음");
+
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.BAD_REQUEST.value())
                 .error("File Upload Error")
-                .message("Maximum upload size exceeded")
+                .message("파일 크기가 허용된 최대 크기를 초과했습니다.")
+                .details(Map.of(
+                    "maxUploadSize", ex.getMaxUploadSize(),
+                    "configuredMaxFileSize", maxFileSize,
+                    "configuredMaxRequestSize", maxRequestSize,
+                    "errorCause", ex.getCause() != null ? ex.getCause().getMessage() : "Unknown"
+                ))
                 .build();
 
-        log.warn("파일 업로드 크기 초과: MaxUploadSize={}, Exception={}",
-                ex.getMaxUploadSize(), ex.getMessage());
+        log.error("파일 업로드 크기 초과 - MaxUploadSize: {}, 설정된 max-file-size: {}, 설정된 max-request-size: {}, Exception: {}",
+                ex.getMaxUploadSize(), maxFileSize, maxRequestSize, ex.getMessage());
+
         return ResponseEntity.badRequest()
                 .header("Content-Type", "application/json;charset=UTF-8")
                 .body(errorResponse);
+    }
+
+    private String getSpringProperty(String propertyName, String defaultValue) {
+        try {
+            return System.getProperty(propertyName, defaultValue);
+        } catch (Exception e) {
+            return defaultValue;
+        }
     }
 
     /**
