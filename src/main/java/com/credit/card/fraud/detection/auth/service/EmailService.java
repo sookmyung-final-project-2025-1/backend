@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
 public class EmailService {
 
     private final JavaMailSender mailSender;
-    private final RedisTemplate<String, String> redisTemplate;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     @Value("${spring.mail.username}")
     private String fromEmail;
@@ -72,7 +72,7 @@ public class EmailService {
     public boolean verifyCode(String email, String code) {
         try {
             String key = EMAIL_VERIFICATION_PREFIX + email;
-            String storedCode = redisTemplate.opsForValue().get(key);
+            String storedCode = (String) redisTemplate.opsForValue().get(key);
 
             if (storedCode == null) {
                 log.warn("만료되거나 존재하지 않는 인증 코드: {}", email);
@@ -103,7 +103,7 @@ public class EmailService {
     public boolean isEmailVerified(String email) {
         try {
             String verifiedKey = EMAIL_VERIFIED_PREFIX + email;
-            String verified = redisTemplate.opsForValue().get(verifiedKey);
+            String verified = (String) redisTemplate.opsForValue().get(verifiedKey);
             return "true".equals(verified);
         } catch (Exception e) {
             log.error("이메일 인증 상태 확인 중 오류 발생: {}", email, e);
