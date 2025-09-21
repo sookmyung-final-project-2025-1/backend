@@ -135,17 +135,59 @@ public class BatchController {
         }
     }
 
+    @PostMapping("/process-large-batch")
+    @Operation(summary = "대량 PENDING 거래 청크 단위 처리", description = "130K+ 건의 대량 PENDING 거래를 효율적으로 청크 단위로 처리합니다")
+    public ResponseEntity<Map<String, Object>> processLargeBatch() {
+        try {
+            long pendingCount = batchFraudDetectionService.getPendingTransactionCountForced();
+
+            if (pendingCount == 0) {
+                return ResponseEntity.ok(Map.of(
+                    "message", "처리할 PENDING 상태 거래가 없습니다",
+                    "pendingCount", 0
+                ));
+            }
+
+            // 대량 배치 처리 시작
+            batchFraudDetectionService.processLargePendingTransactionsInChunks();
+
+            Map<String, Object> response = Map.of(
+                "message", "대량 배치 처리가 시작되었습니다",
+                "pendingCount", pendingCount,
+                "processingMode", "청크 단위 병렬 처리",
+                "estimatedTime", String.format("약 %d분 예상", (pendingCount / 5000) / 16 + 10)
+            );
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("대량 배치 처리 시작 실패", e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                "error", "대량 배치 처리 시작 실패: " + e.getMessage()
+            ));
+        }
+    }
+
     @GetMapping("/pending-count")
     @Operation(summary = "PENDING 상태 거래 개수 조회", description = "사기 탐지 처리를 기다리고 있는 거래의 개수를 조회합니다")
     public ResponseEntity<Map<String, Object>> getPendingCount() {
         try {
             long pendingCount = batchFraudDetectionService.getPendingTransactionCount();
 
+            // 50만건 기준 예상 처리 시간 계산
+            int estimatedMinutes = (int) ((pendingCount / 5000) / 16) + 10;
+            String processingRecommendation = pendingCount > 100000 ?
+                "대량 처리 모드(/process-large-batch) 사용을 권장합니다" :
+                "일반 처리 모드(/process-fraud-detection) 사용 가능합니다";
+
             return ResponseEntity.ok(Map.of(
                 "pendingCount", pendingCount,
                 "message", pendingCount > 0 ?
-                    "사기 탐지 처리를 기다리는 거래가 " + pendingCount + "건 있습니다" :
-                    "처리할 PENDING 상태 거래가 없습니다"
+                    "사기 탐지 처리를 기다리는 거래가 " + String.format("%,d", pendingCount) + "건 있습니다" :
+                    "처리할 PENDING 상태 거래가 없습니다",
+                "estimatedProcessingTime", pendingCount > 0 ? estimatedMinutes + "분" : "0분",
+                "recommendation", processingRecommendation,
+                "scale", pendingCount > 500000 ? "초대량" : pendingCount > 100000 ? "대량" : "일반"
             ));
 
         } catch (Exception e) {

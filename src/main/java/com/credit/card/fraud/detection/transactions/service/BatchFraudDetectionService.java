@@ -28,8 +28,11 @@ public class BatchFraudDetectionService {
     private final TransactionRepository transactionRepository;
     private final TransactionService transactionService;
 
-    private static final int PROCESSING_BATCH_SIZE = 500;  // 배치 크기 증가
-    private static final int PARALLEL_THREADS = 4;  // 병렬 처리 스레드 수
+    private static final int PROCESSING_BATCH_SIZE = 5000;  // 50만건 처리를 위해 더 큰 배치
+    private static final int PARALLEL_THREADS = 16;  // 병렬 처리 스레드 수 추가 증가
+    private static final int EXECUTOR_SHUTDOWN_TIMEOUT = 600;  // 10분 대기
+    private static final int PROGRESS_LOG_INTERVAL = 10000;  // 1만건마다 진행 로그
+    private static final int MEMORY_CLEANUP_INTERVAL = 5;  // 5 청크마다 메모리 정리
 
     /**
      * PENDING 상태의 거래들에 대해 병렬로 사기 탐지 수행 (최적화된 버전)
@@ -90,16 +93,134 @@ public class BatchFraudDetectionService {
         } finally {
             executor.shutdown();
             try {
-                if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                if (!executor.awaitTermination(EXECUTOR_SHUTDOWN_TIMEOUT, TimeUnit.SECONDS)) {
+                    log.warn("Executor 종료 타임아웃, 강제 종료 실행");
                     executor.shutdownNow();
+                    if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+                        log.error("Executor 강제 종료 실패");
+                    }
                 }
             } catch (InterruptedException e) {
+                log.warn("Executor 종료 중 인터럽트 발생");
                 executor.shutdownNow();
                 Thread.currentThread().interrupt();
             }
         }
 
         return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * 청크 단위로 대량 PENDING 거래 처리 (메모리 효율적)
+     */
+    @Async
+    @CacheEvict(value = "pendingCount", key = "'pending_transaction_count'")
+    public CompletableFuture<Void> processLargePendingTransactionsInChunks() {
+        log.info("시작: 대량 PENDING 거래 청크 단위 처리");
+
+        AtomicInteger totalProcessed = new AtomicInteger(0);
+        AtomicInteger totalFailed = new AtomicInteger(0);
+
+        try {
+            long totalPending = getPendingTransactionCountForced();
+            log.info("처리 대상 PENDING 거래: {} 건", totalPending);
+
+            if (totalPending == 0) {
+                log.info("처리할 PENDING 거래가 없습니다");
+                return CompletableFuture.completedFuture(null);
+            }
+
+            int pageNumber = 0;
+            boolean hasMore = true;
+
+            while (hasMore) {
+                Pageable pageable = PageRequest.of(pageNumber, PROCESSING_BATCH_SIZE);
+                Page<Transaction> pendingTransactions = transactionRepository.findByStatus(
+                    Transaction.TransactionStatus.PENDING, pageable);
+
+                if (!pendingTransactions.hasContent()) {
+                    hasMore = false;
+                    continue;
+                }
+
+                // 현재 청크 처리
+                int chunkProcessed = processTransactionChunk(pendingTransactions.getContent());
+                totalProcessed.addAndGet(chunkProcessed);
+
+                // 처리 상태 로깅 (더 자주)
+                if (totalProcessed.get() % PROGRESS_LOG_INTERVAL == 0) {
+                    long remaining = getPendingTransactionCountForced();
+                    double progress = ((double) totalProcessed.get() / totalPending) * 100;
+                    log.info("처리 진행: {:.1f}% ({} / {} 건), 남은 거래: {} 건",
+                        progress, totalProcessed.get(), totalPending, remaining);
+                }
+
+                hasMore = pendingTransactions.hasNext();
+                pageNumber++;
+
+                // 메모리 정리를 위한 짧은 대기 (더 자주)
+                if (pageNumber % MEMORY_CLEANUP_INTERVAL == 0) {
+                    try {
+                        Thread.sleep(200);  // 조금 더 긴 대기
+                        System.gc();
+                        log.debug("메모리 정리 수행 - 청크 {}", pageNumber);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+
+            log.info("완료: 대량 PENDING 거래 처리 - 총 처리: {} 건, 실패: {} 건",
+                totalProcessed.get(), totalFailed.get());
+
+        } catch (Exception e) {
+            log.error("대량 배치 처리 중 오류 발생", e);
+        }
+
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * 단일 청크 처리 (병렬)
+     */
+    private int processTransactionChunk(List<Transaction> transactions) {
+        AtomicInteger processedCount = new AtomicInteger(0);
+        ExecutorService chunkExecutor = Executors.newFixedThreadPool(PARALLEL_THREADS);
+
+        try {
+            List<CompletableFuture<Void>> futures = transactions.stream()
+                .map(transaction -> CompletableFuture.runAsync(() -> {
+                    try {
+                        transactionService.processAndDetectFraud(transaction);
+                        processedCount.incrementAndGet();
+                    } catch (Exception e) {
+                        log.error("거래 {} 처리 실패: {}", transaction.getId(), e.getMessage());
+                        markTransactionAsError(transaction);
+                    }
+                }, chunkExecutor))
+                .toList();
+
+            // 현재 청크의 모든 작업 완료 대기
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .orTimeout(300, TimeUnit.SECONDS) // 5분 타임아웃
+                .join();
+
+        } catch (Exception e) {
+            log.error("청크 처리 중 오류: {}", e.getMessage());
+        } finally {
+            chunkExecutor.shutdown();
+            try {
+                if (!chunkExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
+                    chunkExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                chunkExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        return processedCount.get();
     }
 
     /**

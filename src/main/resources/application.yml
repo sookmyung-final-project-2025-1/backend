@@ -22,14 +22,14 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
 
     hikari:
-      maximum-pool-size: 50  # 병렬 처리를 위해 증가
-      minimum-idle: 10
-      idle-timeout: 300000
-      connection-timeout: 60000  # 60초로 연장
-      max-lifetime: 1200000
-      leak-detection-threshold: 60000
-      validation-timeout: 30000  # 연결 검증 타임아웃
-      initialization-fail-timeout: 60000  # 초기화 실패 타임아웃
+      maximum-pool-size: 100  # 50만건 처리를 위해 최대 증가
+      minimum-idle: 30
+      idle-timeout: 600000    # 10분으로 증가
+      connection-timeout: 120000  # 2분으로 추가 연장
+      max-lifetime: 3600000   # 1시간으로 연장
+      leak-detection-threshold: 120000  # 2분으로 증가
+      validation-timeout: 60000   # 1분으로 증가
+      initialization-fail-timeout: 120000
 
   jpa:
     hibernate:
@@ -41,11 +41,17 @@ spring:
         format_sql: true
         use_sql_comments: true
         jdbc:
-          batch_size: 1000
+          batch_size: 5000  # 50만건을 위한 대폭 증가
           batch_versioned_data: true
+          fetch_size: 2000  # fetch 크기 증가
         order_inserts: true
         order_updates: true
         generate_statistics: false
+        cache:
+          use_second_level_cache: false
+          use_query_cache: false  # 쿼리 캐시도 비활성화
+        connection:
+          autocommit: false  # 배치 처리 최적화
     open-in-view: false
 
   data:
@@ -87,14 +93,16 @@ server:
       force: true
   shutdown: graceful
   tomcat:
-    connection-timeout: 600000  # 10분으로 연장
-    keep-alive-timeout: 60000   # Keep-Alive 타임아웃
-    max-keep-alive-requests: 100 # Keep-Alive 요청 수
-    max-connections: 8192
-    max-http-post-size: 2GB  # 2GB로 설정
+    connection-timeout: 900000  # 15분으로 추가 연장
+    keep-alive-timeout: 300000  # Keep-Alive 타임아웃 5분으로 증가
+    max-keep-alive-requests: 1000 # Keep-Alive 요청 수 증가
+    max-connections: 10000      # 최대 연결 수 증가
+    max-http-post-size: 2GB
     threads:
-      max: 200
-      min-spare: 10
+      max: 300                  # 최대 스레드 수 증가
+      min-spare: 50             # 최소 대기 스레드 증가
+    accept-count: 200           # 대기큐 크기 증가
+    max-swallow-size: 2MB       # 삼킬 수 있는 최대 요청 크기
 
 management:
   endpoints:
@@ -139,10 +147,10 @@ model:
   service:
     enabled: ${MODEL_SERVICE_ENABLED:true}
     url: ${MODEL_SERVICE_URL:http://model:8000}
-    timeout: ${MODEL_SERVICE_TIMEOUT:120000}  # 2분으로 연장
+    timeout: ${MODEL_SERVICE_TIMEOUT:180000}  # 3분으로 추가 연장
     retry:
-      max-attempts: ${MODEL_SERVICE_RETRY_MAX_ATTEMPTS:3}
-      delay: ${MODEL_SERVICE_RETRY_DELAY:2000}  # 2초로 연장
+      max-attempts: ${MODEL_SERVICE_RETRY_MAX_ATTEMPTS:5}  # 재시도 횟수 증가
+      delay: ${MODEL_SERVICE_RETRY_DELAY:3000}  # 3초로 연장
     github:
       data-repo: ${MODEL_DATA_REPO:sookmyung-final-project-2025-1/Data}
       default-version: ${MODEL_DEFAULT_VERSION:v1.0.0}
