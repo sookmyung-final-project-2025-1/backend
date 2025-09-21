@@ -79,7 +79,7 @@ jobs:
           MYSQL_USER=${{ secrets.MYSQL_USER }}
           MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
           SPRING_PROFILES_ACTIVE=production
-          SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+          SPRING_JPA_HIBERNATE_DDL_AUTO=update
           SPRING_JPA_SHOW_SQL=true
           MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always
           MODEL_SERVICE_ENABLED=true
