@@ -52,11 +52,11 @@ public class BatchFraudDetectionService {
             Page<Transaction> pendingTransactions;
 
             do {
-                pendingTransactions = transactionRepository.findByStatus(
-                    Transaction.TransactionStatus.PENDING, pageable);
+                List<Long> transactionIds = transactionRepository.findPendingTransactionIds(pageable);
 
-                if (pendingTransactions.hasContent()) {
-                    List<Transaction> transactions = pendingTransactions.getContent();
+                if (!transactionIds.isEmpty()) {
+                    List<Transaction> transactions = transactionRepository.findTransactionsWithAssociationsByIds(transactionIds);
+                    pendingTransactions = new PageImpl<>(transactions, pageable, transactions.size());
 
                     // 병렬 처리를 위해 CompletableFuture 리스트 생성
                     List<CompletableFuture<Void>> futures = transactions.stream()
@@ -80,11 +80,13 @@ public class BatchFraudDetectionService {
 
                     // 현재 배치의 모든 작업 완료 대기
                     CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                } else {
+                    pendingTransactions = Page.empty();
                 }
 
                 pageable = pageable.next();
 
-            } while (pendingTransactions.hasNext());
+            } while (transactionIds.size() >= PROCESSING_BATCH_SIZE);
 
             log.info("완료: PENDING 상태 거래 사기 탐지 처리 - 처리: {}, 실패: {}",
                 processedCount.get(), failedCount.get());
@@ -188,15 +190,15 @@ public class BatchFraudDetectionService {
         Pageable pageable = PageRequest.of(pageNumber, PROCESSING_BATCH_SIZE);
 
         try {
-            // 먼저 detectionResults를 포함해서 로딩
-            List<Transaction> transactionsWithDetectionResults = transactionRepository.findPendingTransactionsWithDetectionResults(pageable);
+            // 먼저 ID만 조회 (페이징 적용)
+            List<Long> transactionIds = transactionRepository.findPendingTransactionIds(pageable);
 
-            // 그 다음 같은 거래들의 reports를 로딩 (이미 1차 캐시에 있는 엔티티들에 추가됨)
-            if (!transactionsWithDetectionResults.isEmpty()) {
-                transactionRepository.findPendingTransactionsWithReports(pageable);
+            if (transactionIds.isEmpty()) {
+                return List.of();
             }
 
-            return transactionsWithDetectionResults;
+            // ID 리스트로 연관 데이터와 함께 조회
+            return transactionRepository.findTransactionsWithAssociationsByIds(transactionIds);
         } catch (Exception e) {
             log.error("거래 청크 로딩 실패 (페이지: {}): {}", pageNumber, e.getMessage());
             return List.of();
@@ -257,11 +259,10 @@ public class BatchFraudDetectionService {
 
         try {
             Pageable pageable = PageRequest.of(0, Math.min(limit, PROCESSING_BATCH_SIZE));
-            Page<Transaction> pendingTransactions = transactionRepository.findByStatus(
-                Transaction.TransactionStatus.PENDING, pageable);
+            List<Long> transactionIds = transactionRepository.findPendingTransactionIds(pageable);
 
-            while (pendingTransactions.hasContent() && processedCount < limit) {
-                List<Transaction> transactions = pendingTransactions.getContent();
+            while (!transactionIds.isEmpty() && processedCount < limit) {
+                List<Transaction> transactions = transactionRepository.findTransactionsWithAssociationsByIds(transactionIds);
 
                 for (Transaction transaction : transactions) {
                     if (processedCount >= limit) break;
@@ -282,10 +283,9 @@ public class BatchFraudDetectionService {
                 }
 
                 // 다음 페이지
-                if (pendingTransactions.hasNext() && processedCount < limit) {
+                if (transactionIds.size() >= PROCESSING_BATCH_SIZE && processedCount < limit) {
                     pageable = pageable.next();
-                    pendingTransactions = transactionRepository.findByStatus(
-                        Transaction.TransactionStatus.PENDING, pageable);
+                    transactionIds = transactionRepository.findPendingTransactionIds(pageable);
                 } else {
                     break;
                 }

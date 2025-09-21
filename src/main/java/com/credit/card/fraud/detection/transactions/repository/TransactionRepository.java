@@ -147,19 +147,19 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
            "WHERE t.status = :status")
     List<Transaction> findByStatusWithDetectionResults(@Param("status") Transaction.TransactionStatus status, Pageable pageable);
 
-    // 배치 처리용 PENDING 거래 조회 (detectionResults만 fetch)
+    // 배치 처리용 PENDING 거래 ID만 조회 (페이징 지원)
+    @Query("SELECT t.id FROM Transaction t " +
+           "WHERE t.status = 'PENDING' " +
+           "ORDER BY t.id")
+    List<Long> findPendingTransactionIds(Pageable pageable);
+
+    // ID 리스트로 연관 데이터와 함께 조회
     @Query("SELECT DISTINCT t FROM Transaction t " +
            "LEFT JOIN FETCH t.detectionResults " +
-           "WHERE t.status = 'PENDING' " +
-           "ORDER BY t.id")
-    List<Transaction> findPendingTransactionsWithDetectionResults(Pageable pageable);
-
-    // 배치 처리용 PENDING 거래 조회 (reports만 fetch)
-    @Query("SELECT DISTINCT t FROM Transaction t " +
            "LEFT JOIN FETCH t.reports " +
-           "WHERE t.status = 'PENDING' " +
+           "WHERE t.id IN :ids " +
            "ORDER BY t.id")
-    List<Transaction> findPendingTransactionsWithReports(Pageable pageable);
+    List<Transaction> findTransactionsWithAssociationsByIds(@Param("ids") List<Long> ids);
 
     // 배치 처리용 PENDING 거래 조회 (기본 엔티티만)
     @Query("SELECT t FROM Transaction t " +
