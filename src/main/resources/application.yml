@@ -75,9 +75,13 @@ server:
       charset: UTF-8
       enabled: true
       force: true
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 500MB
+      file-size-threshold: 2MB
   shutdown: graceful
   tomcat:
-    connection-timeout: 20000
+    connection-timeout: 300000
     max-connections: 8192
     threads:
       max: 200

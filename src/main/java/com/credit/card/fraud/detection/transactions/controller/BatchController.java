@@ -134,4 +134,23 @@ public class BatchController {
             ));
         }
     }
+
+    @DeleteMapping("/clear-batch-data")
+    @Operation(summary = "배치 업로드 데이터 삭제", description = "배치 업로드로 삽입된 모든 거래 데이터를 삭제합니다 (PENDING 상태 거래 대상)")
+    public ResponseEntity<Map<String, Object>> clearBatchData() {
+        try {
+            long deletedCount = csvBatchService.clearBatchData();
+
+            return ResponseEntity.ok(Map.of(
+                "message", "배치 데이터 삭제 완료",
+                "deletedCount", deletedCount
+            ));
+
+        } catch (Exception e) {
+            log.error("배치 데이터 삭제 실패", e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                "error", "배치 데이터 삭제 실패: " + e.getMessage()
+            ));
+        }
+    }
 }

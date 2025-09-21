@@ -28,7 +28,7 @@ public class CsvBatchService {
     private final TransactionRepository transactionRepository;
     private final RedisTemplate<String, Object> redisTemplate;
 
-    private static final int BATCH_SIZE = 1000;
+    private static final int BATCH_SIZE = 5000;
     private static final String JOB_STATUS_PREFIX = "batch_job:";
 
     public String startBatchProcessing(MultipartFile file) {
@@ -74,12 +74,11 @@ public class CsvBatchService {
                         successfulRecords += savedCount;
                         failedRecords += (batch.size() - savedCount);
 
-                        // 진행률 업데이트
-                        updateJobStatus(jobId, "RUNNING", totalRecords, totalRecords, successfulRecords, failedRecords, null);
-
                         batch.clear();
 
-                        if (totalRecords % 10000 == 0) {
+                        // 진행률 업데이트 (더 자주 업데이트하지 않도록 수정)
+                        if (totalRecords % 25000 == 0) {
+                            updateJobStatus(jobId, "RUNNING", totalRecords, totalRecords, successfulRecords, failedRecords, null);
                             log.info("배치 처리 진행: {} 건 완료 (성공: {}, 실패: {})",
                                     totalRecords, successfulRecords, failedRecords);
                         }
@@ -274,21 +273,41 @@ public class CsvBatchService {
             // status를 PENDING으로 설정하여 나중에 별도 처리 가능하도록 함
             transactions.forEach(t -> t.setStatus(Transaction.TransactionStatus.PENDING));
 
+            // JPA 배치 삽입 사용
             List<Transaction> saved = transactionRepository.saveAll(transactions);
+
+            // 강제로 플러시하여 데이터베이스에 즉시 반영
+            transactionRepository.flush();
+
             return saved.size();
         } catch (Exception e) {
             log.error("배치 저장 실패: {}", e.getMessage());
 
-            // 개별 저장 시도
+            // 배치를 더 작은 청크로 나누어 재시도
             int successCount = 0;
-            for (Transaction transaction : transactions) {
+            int chunkSize = 1000;
+            for (int i = 0; i < transactions.size(); i += chunkSize) {
+                int end = Math.min(i + chunkSize, transactions.size());
+                List<Transaction> chunk = transactions.subList(i, end);
+
                 try {
-                    transaction.setStatus(Transaction.TransactionStatus.PENDING);
-                    transactionRepository.save(transaction);
-                    successCount++;
+                    chunk.forEach(t -> t.setStatus(Transaction.TransactionStatus.PENDING));
+                    List<Transaction> chunkSaved = transactionRepository.saveAll(chunk);
+                    successCount += chunkSaved.size();
                 } catch (Exception ex) {
-                    log.debug("개별 거래 저장 실패: ID={}, 오류={}",
-                            transaction.getExternalTransactionId(), ex.getMessage());
+                    log.warn("청크 저장 실패, 개별 저장 시도: {}", ex.getMessage());
+
+                    // 개별 저장 시도
+                    for (Transaction transaction : chunk) {
+                        try {
+                            transaction.setStatus(Transaction.TransactionStatus.PENDING);
+                            transactionRepository.save(transaction);
+                            successCount++;
+                        } catch (Exception individualEx) {
+                            log.debug("개별 거래 저장 실패: ID={}, 오류={}",
+                                    transaction.getExternalTransactionId(), individualEx.getMessage());
+                        }
+                    }
                 }
             }
             return successCount;
@@ -320,5 +339,22 @@ public class CsvBatchService {
         }
 
         return result;
+    }
+
+    @Transactional
+    public long clearBatchData() {
+        try {
+            log.info("배치 업로드 데이터 삭제 시작");
+
+            // PENDING 상태의 모든 거래와 관련 사기 탐지 결과 삭제
+            long deletedTransactions = transactionRepository.deleteByStatus(Transaction.TransactionStatus.PENDING);
+
+            log.info("배치 데이터 삭제 완료: {} 건의 거래 삭제", deletedTransactions);
+
+            return deletedTransactions;
+        } catch (Exception e) {
+            log.error("배치 데이터 삭제 중 오류 발생", e);
+            throw new RuntimeException("배치 데이터 삭제 실패: " + e.getMessage(), e);
+        }
     }
 }
