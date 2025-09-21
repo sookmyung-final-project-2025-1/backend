@@ -60,12 +60,13 @@ public class RedisConfig {
         // 개별 캐시별 설정
         Map<String, RedisCacheConfiguration> cacheConfigurations = new HashMap<>();
 
-        // pending count는 30초 TTL (자주 변경될 수 있는 데이터)
+        // pending count는 5분 TTL로 연장 (네트워크 문제 시 캐시 유지)
         cacheConfigurations.put("pendingCount",
                 RedisCacheConfiguration.defaultCacheConfig()
                         .serializeKeysWith(org.springframework.data.redis.serializer.RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
                         .serializeValuesWith(org.springframework.data.redis.serializer.RedisSerializationContext.SerializationPair.fromSerializer(new GenericJackson2JsonRedisSerializer()))
-                        .entryTtl(Duration.ofSeconds(30)));
+                        .entryTtl(Duration.ofMinutes(5))
+                        .disableCachingNullValues()); // null 값 캐싱 방지
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(defaultCacheConfig)

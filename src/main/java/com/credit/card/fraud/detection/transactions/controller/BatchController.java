@@ -27,17 +27,36 @@ public class BatchController {
     @Operation(summary = "CSV 파일 업로드", description = "IEEE 신용카드 데이터셋 CSV 파일을 업로드하여 배치 처리를 시작합니다")
     public ResponseEntity<Map<String, Object>> uploadCsvFile(@RequestParam("file") MultipartFile file) {
         try {
+            log.info("파일 업로드 요청 시작 - 파일명: {}, 크기: {} bytes",
+                file.getOriginalFilename(), file.getSize());
+
             // 파일 유효성 검사
-            if (file.isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "파일이 비어있습니다"));
+            if (file == null || file.isEmpty()) {
+                log.warn("빈 파일 업로드 시도");
+                return ResponseEntity.badRequest()
+                        .header("Content-Type", "application/json;charset=UTF-8")
+                        .body(Map.of("error", "파일이 비어있습니다"));
             }
 
-            if (!file.getOriginalFilename().toLowerCase().endsWith(".csv")) {
-                return ResponseEntity.badRequest().body(Map.of("error", "CSV 파일만 업로드 가능합니다"));
+            if (file.getOriginalFilename() == null ||
+                !file.getOriginalFilename().toLowerCase().endsWith(".csv")) {
+                log.warn("잘못된 파일 형식: {}", file.getOriginalFilename());
+                return ResponseEntity.badRequest()
+                        .header("Content-Type", "application/json;charset=UTF-8")
+                        .body(Map.of("error", "CSV 파일만 업로드 가능합니다"));
+            }
+
+            // 파일 크기 검증 (1GB 제한)
+            if (file.getSize() > 1024L * 1024 * 1024) {
+                log.warn("파일 크기 초과: {} bytes", file.getSize());
+                return ResponseEntity.badRequest()
+                        .header("Content-Type", "application/json;charset=UTF-8")
+                        .body(Map.of("error", "파일 크기는 1GB를 초과할 수 없습니다"));
             }
 
             // 비동기 배치 처리 시작
             String jobId = csvBatchService.startBatchProcessing(file);
+            log.info("배치 처리 시작됨 - Job ID: {}", jobId);
 
             Map<String, Object> response = Map.of(
                 "jobId", jobId,
@@ -46,13 +65,15 @@ public class BatchController {
                 "fileSize", file.getSize()
             );
 
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok()
+                    .header("Content-Type", "application/json;charset=UTF-8")
+                    .body(response);
 
         } catch (Exception e) {
             log.error("CSV 파일 업로드 실패", e);
-            return ResponseEntity.internalServerError().body(Map.of(
-                "error", "파일 업로드 실패: " + e.getMessage()
-            ));
+            return ResponseEntity.internalServerError()
+                    .header("Content-Type", "application/json;charset=UTF-8")
+                    .body(Map.of("error", "파일 업로드 실패: " + e.getMessage()));
         }
     }
 

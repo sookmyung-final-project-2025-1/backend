@@ -140,12 +140,30 @@ public class BatchFraudDetectionService {
     }
 
     /**
-     * PENDING 상태 거래 개수 조회 (Redis 캐시 적용)
+     * PENDING 상태 거래 개수 조회 (Redis 캐시 적용 + Fallback)
      */
     @Cacheable(value = "pendingCount", key = "'pending_transaction_count'")
     public long getPendingTransactionCount() {
-        log.debug("데이터베이스에서 PENDING 거래 개수 조회 중...");
-        return transactionRepository.countByStatus(Transaction.TransactionStatus.PENDING);
+        try {
+            log.debug("데이터베이스에서 PENDING 거래 개수 조회 중...");
+            return transactionRepository.countByStatus(Transaction.TransactionStatus.PENDING);
+        } catch (Exception e) {
+            log.error("PENDING 거래 개수 조회 실패, 캐시된 값 또는 기본값 반환: {}", e.getMessage());
+            // 네트워크 문제 시 캐시된 값을 유지하거나 기본값 반환
+            return 0L;
+        }
+    }
+
+    /**
+     * PENDING 상태 거래 개수 조회 (캐시 무시하고 강제 조회)
+     */
+    public long getPendingTransactionCountForced() {
+        try {
+            return transactionRepository.countByStatus(Transaction.TransactionStatus.PENDING);
+        } catch (Exception e) {
+            log.error("강제 PENDING 거래 개수 조회 실패: {}", e.getMessage());
+            throw new RuntimeException("데이터베이스 연결 실패: " + e.getMessage(), e);
+        }
     }
 
     @Transactional

@@ -17,9 +17,11 @@ spring:
       maximum-pool-size: 20
       minimum-idle: 5
       idle-timeout: 300000
-      connection-timeout: 20000
+      connection-timeout: 60000  # 60초로 연장
       max-lifetime: 1200000
       leak-detection-threshold: 60000
+      validation-timeout: 30000  # 연결 검증 타임아웃
+      initialization-fail-timeout: 60000  # 초기화 실패 타임아웃
 
   jpa:
     hibernate:
@@ -76,12 +78,14 @@ server:
       enabled: true
       force: true
     multipart:
-      max-file-size: 500MB
-      max-request-size: 500MB
+      max-file-size: 1GB
+      max-request-size: 1GB
       file-size-threshold: 2MB
   shutdown: graceful
   tomcat:
-    connection-timeout: 300000
+    connection-timeout: 600000  # 10분으로 연장
+    keep-alive-timeout: 60000   # Keep-Alive 타임아웃
+    max-keep-alive-requests: 100 # Keep-Alive 요청 수
     max-connections: 8192
     threads:
       max: 200

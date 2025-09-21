@@ -39,7 +39,9 @@ public class GlobalExceptionHandler {
                 .build();
 
         log.warn("입력 검증 실패: {}", errors);
-        return ResponseEntity.badRequest().body(errorResponse);
+        return ResponseEntity.badRequest()
+                .header("Content-Type", "application/json;charset=UTF-8")
+                .body(errorResponse);
     }
 
     /**
@@ -55,7 +57,9 @@ public class GlobalExceptionHandler {
                 .build();
 
         log.warn("비즈니스 로직 오류: {}", ex.getMessage());
-        return ResponseEntity.badRequest().body(errorResponse);
+        return ResponseEntity.badRequest()
+                .header("Content-Type", "application/json;charset=UTF-8")
+                .body(errorResponse);
     }
 
     /**
@@ -71,7 +75,9 @@ public class GlobalExceptionHandler {
                 .build();
 
         log.error("서버 내부 오류", ex);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .header("Content-Type", "application/json;charset=UTF-8")
+                .body(errorResponse);
     }
 
     /**
