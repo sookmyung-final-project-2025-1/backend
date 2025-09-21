@@ -57,8 +57,8 @@ public class GlobalExceptionHandler {
                 .message("Maximum upload size exceeded")
                 .build();
 
-        log.warn("파일 업로드 크기 초과: MaxFileSize={}, MaxRequestSize={}, Exception={}",
-                ex.getMaxUploadSize(), ex.getMaxUploadSize(), ex.getMessage());
+        log.warn("파일 업로드 크기 초과: MaxUploadSize={}, Exception={}",
+                ex.getMaxUploadSize(), ex.getMessage());
         return ResponseEntity.badRequest()
                 .header("Content-Type", "application/json;charset=UTF-8")
                 .body(errorResponse);
