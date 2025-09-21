@@ -373,15 +373,94 @@ public class CsvBatchService {
         try {
             log.info("배치 업로드 데이터 삭제 시작");
 
-            // PENDING 상태의 모든 거래와 관련 사기 탐지 결과 삭제
-            long deletedTransactions = transactionRepository.deleteByStatus(Transaction.TransactionStatus.PENDING);
+            long totalDeleted = 0;
+            int chunkSize = 10000; // 한 번에 1만건씩 삭제
 
-            log.info("배치 데이터 삭제 완료: {} 건의 거래 삭제", deletedTransactions);
+            // PENDING 상태 거래 개수 확인
+            long pendingCount = transactionRepository.countByStatus(Transaction.TransactionStatus.PENDING);
+            log.info("삭제 대상 PENDING 거래: {} 건", pendingCount);
 
-            return deletedTransactions;
+            if (pendingCount == 0) {
+                log.info("삭제할 PENDING 거래가 없습니다");
+                return 0;
+            }
+
+            // 청크 단위로 삭제 처리
+            int deletedInChunk;
+            int iteration = 0;
+            do {
+                iteration++;
+                deletedInChunk = deleteChunkByStatus(Transaction.TransactionStatus.PENDING, chunkSize);
+                totalDeleted += deletedInChunk;
+
+                log.info("배치 삭제 진행 중: {} 회차, 이번 청크: {} 건, 총 삭제: {} 건",
+                        iteration, deletedInChunk, totalDeleted);
+
+                // 잠시 대기하여 DB 부하 방지
+                if (deletedInChunk > 0) {
+                    try {
+                        Thread.sleep(100); // 100ms 대기
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+
+            } while (deletedInChunk > 0 && totalDeleted < pendingCount);
+
+            log.info("배치 데이터 삭제 완료: {} 건의 거래 삭제 ({} 회 반복)", totalDeleted, iteration);
+
+            return totalDeleted;
         } catch (Exception e) {
             log.error("배치 데이터 삭제 중 오류 발생", e);
             throw new RuntimeException("배치 데이터 삭제 실패: " + e.getMessage(), e);
+        }
+    }
+
+    @Transactional
+    private int deleteChunkByStatus(Transaction.TransactionStatus status, int limit) {
+        try {
+            // ID 기반으로 청크 조회 후 삭제
+            List<Transaction> chunk = transactionRepository.findByStatus(status,
+                    org.springframework.data.domain.PageRequest.of(0, limit))
+                    .getContent();
+
+            if (chunk.isEmpty()) {
+                return 0;
+            }
+
+            // 개별 삭제로 안전하게 처리
+            List<Long> idsToDelete = chunk.stream()
+                    .map(Transaction::getId)
+                    .toList();
+
+            transactionRepository.deleteAllById(idsToDelete);
+            transactionRepository.flush(); // 즉시 반영
+
+            return chunk.size();
+        } catch (Exception e) {
+            log.warn("청크 삭제 실패, 개별 삭제 시도: {}", e.getMessage());
+
+            // 개별 삭제 시도
+            List<Transaction> chunk = transactionRepository.findByStatus(status,
+                    org.springframework.data.domain.PageRequest.of(0, Math.min(limit, 1000)))
+                    .getContent();
+
+            int deletedCount = 0;
+            for (Transaction transaction : chunk) {
+                try {
+                    transactionRepository.delete(transaction);
+                    deletedCount++;
+                } catch (Exception ex) {
+                    log.debug("개별 거래 삭제 실패: ID={}", transaction.getId());
+                }
+            }
+
+            if (deletedCount > 0) {
+                transactionRepository.flush();
+            }
+
+            return deletedCount;
         }
     }
 }
