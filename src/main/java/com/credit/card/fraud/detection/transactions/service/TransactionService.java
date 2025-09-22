@@ -164,7 +164,7 @@ public class TransactionService {
             throw new IllegalArgumentException("User ID cannot be null or empty");
         }
 
-        return transactionRepository.findByUserIdOrderByTransactionTimeDesc(userId, pageable);
+        return transactionRepository.findByUserIdOrderByVirtualTimeDesc(userId, pageable);
     }
 
     /**
