@@ -27,7 +27,7 @@ O = FraudDetection
 CN = fraud-detection
 
 [v3_req]
-keyUsage = keyEncipherment, dataEncipherment
+keyUsage = digitalSignature, keyEncipherment, dataEncipherment, keyAgreement
 extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
