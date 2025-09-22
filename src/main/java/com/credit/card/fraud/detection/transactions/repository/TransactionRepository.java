@@ -92,13 +92,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     @Query("SELECT COUNT(DISTINCT t.userId) FROM Transaction t " +
             "WHERE t.userId NOT IN (" +
             "  SELECT DISTINCT t2.userId FROM Transaction t2 " +
-            "  WHERE t2.transactionTime < :startTime" +
-            ") AND t.transactionTime >= :startTime AND t.transactionTime <= :endTime")
+            "  WHERE t2.virtualTime < :startTime" +
+            ") AND t.virtualTime >= :startTime AND t.virtualTime <= :endTime")
     Long countNewUsersInPeriod(@Param("startTime") LocalDateTime startTime,
                                 @Param("endTime") LocalDateTime endTime);
 
     // 사용자별 거래 조회
-    List<Transaction> findByUserIdOrderByTransactionTimeDesc(String userId, Pageable pageable);
+    List<Transaction> findByUserIdOrderByVirtualTimeDesc(String userId, Pageable pageable);
 
     // 고위험 거래 조회 (탐지 결과와 조인)
     @Query("SELECT t FROM Transaction t " +
@@ -112,13 +112,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     // 기간별 거래 통계
     @Query("SELECT COUNT(t) FROM Transaction t " +
-            "WHERE t.transactionTime BETWEEN :startTime AND :endTime")
+            "WHERE t.virtualTime BETWEEN :startTime AND :endTime")
     Long countTransactionsInPeriod(@Param("startTime") LocalDateTime startTime,
                                    @Param("endTime") LocalDateTime endTime);
 
     // 사기 거래 통계
     @Query("SELECT COUNT(t) FROM Transaction t " +
-            "WHERE t.isFraud = true AND t.transactionTime BETWEEN :startTime AND :endTime")
+            "WHERE t.isFraud = true AND t.virtualTime BETWEEN :startTime AND :endTime")
     Long countFraudTransactionsInPeriod(@Param("startTime") LocalDateTime startTime,
                                         @Param("endTime") LocalDateTime endTime);
 
@@ -132,7 +132,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     // 머천트별 거래 통계
     @Query("SELECT t.merchant, COUNT(t), SUM(t.amount) " +
             "FROM Transaction t " +
-            "WHERE t.transactionTime BETWEEN :startTime AND :endTime " +
+            "WHERE t.virtualTime BETWEEN :startTime AND :endTime " +
             "GROUP BY t.merchant " +
             "ORDER BY COUNT(t) DESC")
     List<Object[]> getMerchantStatistics(@Param("startTime") LocalDateTime startTime,
