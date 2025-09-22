@@ -25,7 +25,9 @@ public class CorsConfig {
         
         // 허용할 헤더
         configuration.setAllowedHeaders(Arrays.asList(
-            "Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin"
+            "Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin",
+            "Sec-WebSocket-Key", "Sec-WebSocket-Version", "Sec-WebSocket-Extensions",
+            "Sec-WebSocket-Protocol", "Connection", "Upgrade"
         ));
         
         // 응답에 포함할 헤더
