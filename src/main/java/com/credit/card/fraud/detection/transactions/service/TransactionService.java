@@ -115,6 +115,7 @@ public class TransactionService {
     /**
      * 필터 조건으로 거래 조회
      */
+    @Transactional(readOnly = true)
     public Page<Transaction> getTransactionsWithFilters(
             String userId, String merchant, String category,
             BigDecimal minAmount, BigDecimal maxAmount, Boolean isFraud,
@@ -134,6 +135,7 @@ public class TransactionService {
     /**
      * 거래의 사기 탐지 결과 조회
      */
+    @Transactional(readOnly = true)
     public Optional<FraudDetectionResult> getFraudDetectionResult(Long transactionId) {
         validateTransactionId(transactionId);
 
@@ -149,6 +151,7 @@ public class TransactionService {
     /**
      * 거래 ID로 조회
      */
+    @Transactional(readOnly = true)
     public Transaction getTransactionById(Long transactionId) {
         validateTransactionId(transactionId);
 
@@ -159,6 +162,7 @@ public class TransactionService {
     /**
      * 사용자별 거래 이력 조회
      */
+    @Transactional(readOnly = true)
     public List<Transaction> getTransactionsByUserId(String userId, Pageable pageable) {
         if (userId == null || userId.trim().isEmpty()) {
             throw new IllegalArgumentException("User ID cannot be null or empty");
@@ -170,6 +174,7 @@ public class TransactionService {
     /**
      * 고위험 거래 조회
      */
+    @Transactional(readOnly = true)
     public List<Transaction> getHighRiskTransactions(BigDecimal minScore, Pageable pageable) {
         if (minScore == null) {
             minScore = new BigDecimal("0.7"); // 기본 고위험 임계값
@@ -181,6 +186,7 @@ public class TransactionService {
     /**
      * 골드 라벨이 있는 거래 조회
      */
+    @Transactional(readOnly = true)
     public List<Transaction> getGoldLabelTransactions(Boolean isFraud, Pageable pageable) {
         return transactionRepository.findByGoldLabelIsNotNullAndGoldLabel(isFraud, pageable);
     }
