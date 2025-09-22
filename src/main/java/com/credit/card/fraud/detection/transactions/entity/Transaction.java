@@ -96,7 +96,6 @@ public class Transaction extends BaseEntity {
     private String cardNumber;
 
     @OneToMany(mappedBy = "transaction", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    @Fetch(FetchMode.SUBSELECT)
     @BatchSize(size = 100)
     @Builder.Default
     private List<UserReport> reports = new ArrayList<>();
