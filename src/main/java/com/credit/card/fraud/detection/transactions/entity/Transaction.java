@@ -15,7 +15,9 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Entity
 @Table(name = "transactions", indexes = {
@@ -101,7 +103,6 @@ public class Transaction extends BaseEntity {
     private List<UserReport> reports = new ArrayList<>();
 
     @OneToMany(mappedBy = "transaction", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    @Fetch(FetchMode.SUBSELECT)
     @BatchSize(size = 100)
     @Builder.Default
     private List<FraudDetectionResult> detectionResults = new ArrayList<>();
