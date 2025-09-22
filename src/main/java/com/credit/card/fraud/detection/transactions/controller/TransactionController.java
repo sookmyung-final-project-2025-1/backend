@@ -1,7 +1,8 @@
 package com.credit.card.fraud.detection.transactions.controller;
 
-import com.credit.card.fraud.detection.transactions.entity.FraudDetectionResult;
-import com.credit.card.fraud.detection.transactions.entity.Transaction;
+import com.credit.card.fraud.detection.transactions.dto.FraudDetectionResultDto;
+import com.credit.card.fraud.detection.transactions.dto.TransactionDetailResponseDto;
+import com.credit.card.fraud.detection.transactions.dto.TransactionResponseDto;
 import com.credit.card.fraud.detection.transactions.service.TransactionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -42,27 +43,8 @@ public class TransactionController {
     @Parameter(name = "isFraud", description = "사기 여부", example = "false")
     @Parameter(name = "startTime", description = "시작 시간 (ISO 8601)", example = "2024-01-01T00:00:00")
     @Parameter(name = "endTime", description = "종료 시간 (ISO 8601)", example = "2024-01-31T23:59:59")
-    @ApiResponse(responseCode = "200", description = "조회 성공",
-            content = @Content(examples = @ExampleObject(value = """
-            {
-              "content": [{
-                "id": 12345,
-                "userId": "USER_12345", 
-                "amount": 150.75,
-                "merchant": "STARBUCKS_GANGNAM",
-                "merchantCategory": "FOOD_BEVERAGE",
-                "transactionTime": "2024-01-15T14:30:00",
-                "isFraud": false,
-                "status": "PROCESSED"
-              }],
-              "pageable": {
-                "pageNumber": 0,
-                "pageSize": 50
-              },
-              "totalElements": 1,
-              "totalPages": 1
-            }""")))
-    public ResponseEntity<Page<Transaction>> getTransactions(
+    @ApiResponse(responseCode = "200", description = "조회 성공")
+    public ResponseEntity<Page<TransactionResponseDto>> getTransactions(
             @RequestParam(required = false) String userId,
             @RequestParam(required = false) String merchant,
             @RequestParam(required = false) String category,
@@ -77,37 +59,31 @@ public class TransactionController {
         if (startTime == null) startTime = LocalDateTime.now().minusDays(7);
         if (endTime == null) endTime = LocalDateTime.now();
 
-        Page<Transaction> transactions = transactionService.getTransactionsWithFilters(
+        Page<TransactionResponseDto> transactions = transactionService.getTransactionsWithFilters(
                 userId, merchant, category, minAmount, maxAmount, isFraud, startTime, endTime, pageable);
 
         return ResponseEntity.ok(transactions);
     }
 
     @GetMapping("/{transactionId}")
-    @Operation(summary = "거래 상세 조회", description = "특정 거래의 상세 정보를 조회합니다")
-    @ApiResponse(responseCode = "200", description = "조회 성공",
-            content = @Content(examples = @ExampleObject(value = """
-            {
-              "id": 12345,
-              "userId": "USER_12345",
-              "amount": 150.75,
-              "merchant": "STARBUCKS_GANGNAM",
-              "merchantCategory": "FOOD_BEVERAGE",
-              "transactionTime": "2024-01-15T14:30:00",
-              "virtualTime": "2024-01-15T14:30:00",
-              "isFraud": false,
-              "goldLabel": null,
-              "latitude": 37.5665,
-              "longitude": 126.9780,
-              "deviceFingerprint": "DEVICE_ABC123",
-              "status": "PROCESSED",
-              "currency": "KRW"
-            }""")))
+    @Operation(summary = "거래 상세 조회", description = "특정 거래의 상세 정보를 조회합니다. 연관관계 포함 여부를 선택할 수 있습니다.")
+    @Parameter(name = "includeReports", description = "신고 내역 포함 여부", example = "false")
+    @Parameter(name = "includeDetectionResults", description = "탐지 결과 포함 여부", example = "false")
+    @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "거래를 찾을 수 없음")
-    public ResponseEntity<Transaction> getTransaction(@PathVariable Long transactionId) {
+    public ResponseEntity<?> getTransaction(
+            @PathVariable Long transactionId,
+            @RequestParam(defaultValue = "false") boolean includeReports,
+            @RequestParam(defaultValue = "false") boolean includeDetectionResults) {
         try {
-            Transaction transaction = transactionService.getTransactionById(transactionId);
-            return ResponseEntity.ok(transaction);
+            if (includeReports || includeDetectionResults) {
+                TransactionDetailResponseDto transaction = transactionService.getTransactionWithAssociations(
+                        transactionId, includeReports, includeDetectionResults);
+                return ResponseEntity.ok(transaction);
+            } else {
+                TransactionResponseDto transaction = transactionService.getTransactionById(transactionId);
+                return ResponseEntity.ok(transaction);
+            }
         } catch (Exception e) {
             return ResponseEntity.notFound().build();
         }
@@ -115,36 +91,22 @@ public class TransactionController {
 
     @GetMapping("/{transactionId}/fraud-detection")
     @Operation(summary = "사기 탐지 결과 조회", description = "특정 거래의 사기 탐지 결과를 조회합니다")
-    @ApiResponse(responseCode = "200", description = "조회 성공",
-            content = @Content(examples = @ExampleObject(value = """
-            {
-              "id": 1,
-              "lgbmScore": 0.234567,
-              "xgboostScore": 0.345678,
-              "catboostScore": 0.456789,
-              "finalScore": 0.312345,
-              "finalPrediction": false,
-              "confidenceScore": 0.892,
-              "riskLevel": "MEDIUM",
-              "threshold": 0.5,
-              "predictionTime": "2024-01-15T14:30:01",
-              "processingTimeMs": 245,
-              "modelVersion": "v2.1.0"
-            }""")))
+    @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "탐지 결과를 찾을 수 없음")
-    public ResponseEntity<FraudDetectionResult> getFraudDetectionResult(@PathVariable Long transactionId) {
-        Optional<FraudDetectionResult> result = transactionService.getFraudDetectionResult(transactionId);
+    public ResponseEntity<FraudDetectionResultDto> getFraudDetectionResult(@PathVariable Long transactionId) {
+        Optional<FraudDetectionResultDto> result = transactionService.getFraudDetectionResult(transactionId);
         return result.map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
+
 
     @GetMapping("/user/{userId}")
     @Operation(summary = "사용자별 거래 조회", description = "특정 사용자의 거래 내역을 조회합니다")
     @ApiResponse(responseCode = "200", description = "조회 성공")
-    public ResponseEntity<List<Transaction>> getTransactionsByUser(
+    public ResponseEntity<List<TransactionResponseDto>> getTransactionsByUser(
             @PathVariable String userId,
             @PageableDefault(size = 20, sort = "transactionTime") Pageable pageable) {
 
-        List<Transaction> transactions = transactionService.getTransactionsByUserId(userId, pageable);
+        List<TransactionResponseDto> transactions = transactionService.getTransactionsByUserId(userId, pageable);
         return ResponseEntity.ok(transactions);
     }
 
@@ -152,11 +114,11 @@ public class TransactionController {
     @Operation(summary = "고위험 거래 조회", description = "사기 점수가 높은 거래들을 조회합니다")
     @Parameter(name = "minScore", description = "최소 사기 점수", example = "0.7")
     @ApiResponse(responseCode = "200", description = "조회 성공")
-    public ResponseEntity<List<Transaction>> getHighRiskTransactions(
+    public ResponseEntity<List<TransactionResponseDto>> getHighRiskTransactions(
             @RequestParam(required = false, defaultValue = "0.7") BigDecimal minScore,
             @PageableDefault(size = 50, sort = "createdAt") Pageable pageable) {
 
-        List<Transaction> transactions = transactionService.getHighRiskTransactions(minScore, pageable);
+        List<TransactionResponseDto> transactions = transactionService.getHighRiskTransactions(minScore, pageable);
         return ResponseEntity.ok(transactions);
     }
 
@@ -164,11 +126,11 @@ public class TransactionController {
     @Operation(summary = "골드 라벨 거래 조회", description = "관리자가 검토한 골드 라벨이 있는 거래들을 조회합니다")
     @Parameter(name = "isFraud", description = "사기 여부 (null이면 모든 골드 라벨 거래)", example = "true")
     @ApiResponse(responseCode = "200", description = "조회 성공")
-    public ResponseEntity<List<Transaction>> getGoldLabelTransactions(
+    public ResponseEntity<List<TransactionResponseDto>> getGoldLabelTransactions(
             @RequestParam(required = false) Boolean isFraud,
             @PageableDefault(size = 50, sort = "updatedAt") Pageable pageable) {
 
-        List<Transaction> transactions = transactionService.getGoldLabelTransactions(isFraud, pageable);
+        List<TransactionResponseDto> transactions = transactionService.getGoldLabelTransactions(isFraud, pageable);
         return ResponseEntity.ok(transactions);
     }
 }

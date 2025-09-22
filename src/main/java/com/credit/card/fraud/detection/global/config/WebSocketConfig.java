@@ -27,14 +27,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // WebSocket 연결을 위한 endpoint 등록
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*") // 개발 환경용, 운영에서는 구체적인 도메인 설정
-                .setAllowedHeaders("*")
-                .setAllowCredentials(true)
                 .withSockJS(); // SockJS fallback 옵션 활성화
 
         // 추가적인 endpoint (SockJS 없이)
         registry.addEndpoint("/ws-native")
-                .setAllowedOriginPatterns("*")
-                .setAllowedHeaders("*")
-                .setAllowCredentials(true);
+                .setAllowedOriginPatterns("*");
     }
 }

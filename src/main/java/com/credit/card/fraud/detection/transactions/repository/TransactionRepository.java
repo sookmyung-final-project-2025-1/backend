@@ -51,8 +51,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     Page<Transaction> findByMerchantCategoryContainingIgnoreCase(String category, Pageable pageable);
 
-    @EntityGraph(attributePaths = {"reports", "detectionResults"})
-    @Query("SELECT DISTINCT t FROM Transaction t " +
+    @Query("SELECT t FROM Transaction t " +
            "WHERE " +
            "(:userId IS NULL OR t.userId = :userId) AND " +
            "(:merchant IS NULL OR t.merchant LIKE %:merchant%) AND " +

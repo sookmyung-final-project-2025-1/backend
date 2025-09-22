@@ -1,6 +1,9 @@
 package com.credit.card.fraud.detection.transactions.service;
 
-import com.credit.card.fraud.detection.modelclient.service.EnsembleModelService;
+import com.credit.card.fraud.detection.transactions.dto.FraudDetectionResultDto;
+import com.credit.card.fraud.detection.transactions.dto.TransactionDetailResponseDto;
+import com.credit.card.fraud.detection.transactions.dto.TransactionResponseDto;
+import com.credit.card.fraud.detection.transactions.dto.UserReportDto;
 import com.credit.card.fraud.detection.transactions.entity.FraudDetectionResult;
 import com.credit.card.fraud.detection.transactions.entity.Transaction;
 import com.credit.card.fraud.detection.transactions.exceptions.TransactionNotFoundException;
@@ -113,19 +116,20 @@ public class TransactionService {
     }
 
     /**
-     * 필터 조건으로 거래 조회
+     * 필터 조건으로 거래 조회 (DTO 반환)
      */
     @Transactional(readOnly = true)
-    public Page<Transaction> getTransactionsWithFilters(
+    public Page<TransactionResponseDto> getTransactionsWithFilters(
             String userId, String merchant, String category,
             BigDecimal minAmount, BigDecimal maxAmount, Boolean isFraud,
             LocalDateTime startTime, LocalDateTime endTime, Pageable pageable) {
 
         try {
-            return transactionRepository.findWithFilters(
+            Page<Transaction> transactions = transactionRepository.findWithFilters(
                     userId, merchant, category, minAmount, maxAmount, isFraud,
                     startTime, endTime, pageable
             );
+            return transactions.map(TransactionResponseDto::from);
         } catch (Exception e) {
             log.error("Error retrieving transactions with filters: {}", e.getMessage(), e);
             throw new TransactionQueryException("Failed to retrieve transactions: " + e.getMessage(), e);
@@ -133,14 +137,15 @@ public class TransactionService {
     }
 
     /**
-     * 거래의 사기 탐지 결과 조회
+     * 거래의 사기 탐지 결과 조회 (DTO 반환)
      */
     @Transactional(readOnly = true)
-    public Optional<FraudDetectionResult> getFraudDetectionResult(Long transactionId) {
+    public Optional<FraudDetectionResultDto> getFraudDetectionResult(Long transactionId) {
         validateTransactionId(transactionId);
 
         try {
-            return fraudDetectionResultRepository.findByTransaction_Id(transactionId);
+            Optional<FraudDetectionResult> result = fraudDetectionResultRepository.findByTransaction_Id(transactionId);
+            return result.map(FraudDetectionResultDto::from);
         } catch (Exception e) {
             log.error("Error retrieving fraud detection result for transaction {}: {}",
                     transactionId, e.getMessage(), e);
@@ -149,46 +154,84 @@ public class TransactionService {
     }
 
     /**
-     * 거래 ID로 조회
+     * 거래 조회 (연관관계 선택적 포함)
      */
     @Transactional(readOnly = true)
-    public Transaction getTransactionById(Long transactionId) {
+    public TransactionDetailResponseDto getTransactionWithAssociations(Long transactionId, boolean includeReports, boolean includeDetectionResults) {
         validateTransactionId(transactionId);
 
-        return transactionRepository.findById(transactionId)
+        // 기본 거래 정보 조회
+        Transaction transaction = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new TransactionNotFoundException("Transaction not found: " + transactionId));
+
+        // 필요한 연관관계만 별도 조회
+        List<UserReportDto> reports = includeReports ?
+            transactionRepository.findTransactionsWithReportsByIdsEntityGraph(List.of(transactionId))
+                .stream().findFirst()
+                .map(t -> t.getReports().stream().map(UserReportDto::from).collect(java.util.stream.Collectors.toList()))
+                .orElse(List.of()) : List.of();
+
+        List<FraudDetectionResultDto> detectionResults = includeDetectionResults ?
+            transactionRepository.findTransactionsWithDetectionResultsByIds(List.of(transactionId))
+                .stream().findFirst()
+                .map(t -> t.getDetectionResults().stream().map(FraudDetectionResultDto::from).collect(java.util.stream.Collectors.toList()))
+                .orElse(List.of()) : List.of();
+
+        return TransactionDetailResponseDto.from(transaction, reports, detectionResults);
     }
 
     /**
-     * 사용자별 거래 이력 조회
+     * 거래 ID로 조회 (DTO 반환)
      */
     @Transactional(readOnly = true)
-    public List<Transaction> getTransactionsByUserId(String userId, Pageable pageable) {
+    public TransactionResponseDto getTransactionById(Long transactionId) {
+        validateTransactionId(transactionId);
+
+        Transaction transaction = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new TransactionNotFoundException("Transaction not found: " + transactionId));
+
+        return TransactionResponseDto.from(transaction);
+    }
+
+    /**
+     * 사용자별 거래 이력 조회 (DTO 반환)
+     */
+    @Transactional(readOnly = true)
+    public List<TransactionResponseDto> getTransactionsByUserId(String userId, Pageable pageable) {
         if (userId == null || userId.trim().isEmpty()) {
             throw new IllegalArgumentException("User ID cannot be null or empty");
         }
 
-        return transactionRepository.findByUserIdOrderByVirtualTimeDesc(userId, pageable);
+        List<Transaction> transactions = transactionRepository.findByUserIdOrderByVirtualTimeDesc(userId, pageable);
+        return transactions.stream()
+                .map(TransactionResponseDto::from)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     /**
-     * 고위험 거래 조회
+     * 고위험 거래 조회 (DTO 반환)
      */
     @Transactional(readOnly = true)
-    public List<Transaction> getHighRiskTransactions(BigDecimal minScore, Pageable pageable) {
+    public List<TransactionResponseDto> getHighRiskTransactions(BigDecimal minScore, Pageable pageable) {
         if (minScore == null) {
             minScore = new BigDecimal("0.7"); // 기본 고위험 임계값
         }
 
-        return transactionRepository.findHighRiskTransactions(minScore, pageable);
+        List<Transaction> transactions = transactionRepository.findHighRiskTransactions(minScore, pageable);
+        return transactions.stream()
+                .map(TransactionResponseDto::from)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     /**
-     * 골드 라벨이 있는 거래 조회
+     * 골드 라벨이 있는 거래 조회 (DTO 반환)
      */
     @Transactional(readOnly = true)
-    public List<Transaction> getGoldLabelTransactions(Boolean isFraud, Pageable pageable) {
-        return transactionRepository.findByGoldLabelIsNotNullAndGoldLabel(isFraud, pageable);
+    public List<TransactionResponseDto> getGoldLabelTransactions(Boolean isFraud, Pageable pageable) {
+        List<Transaction> transactions = transactionRepository.findByGoldLabelIsNotNullAndGoldLabel(isFraud, pageable);
+        return transactions.stream()
+                .map(TransactionResponseDto::from)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     // Private helper methods
