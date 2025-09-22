@@ -51,7 +51,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     Page<Transaction> findByMerchantCategoryContainingIgnoreCase(String category, Pageable pageable);
 
-    @Query("SELECT t FROM Transaction t WHERE " +
+    @Query("SELECT DISTINCT t FROM Transaction t " +
+           "LEFT JOIN FETCH t.reports " +
+           "WHERE " +
            "(:userId IS NULL OR t.userId = :userId) AND " +
            "(:merchant IS NULL OR t.merchant LIKE %:merchant%) AND " +
            "(:category IS NULL OR t.merchantCategory LIKE %:category%) AND " +
