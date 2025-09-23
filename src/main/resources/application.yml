@@ -99,6 +99,8 @@ server:
       enabled: true
       force: true
   shutdown: graceful
+  forward-headers-strategy: framework
+  use-forward-headers: true
   tomcat:
     connection-timeout: 900000  # 15분으로 추가 연장
     keep-alive-timeout: 300000  # Keep-Alive 타임아웃 5분으로 증가
@@ -110,6 +112,9 @@ server:
       min-spare: 50             # 최소 대기 스레드 증가
     accept-count: 200           # 대기큐 크기 증가
     max-swallow-size: 2MB       # 삼킬 수 있는 최대 요청 크기
+    remoteip:
+      protocol-header: x-forwarded-proto
+      remote-ip-header: x-forwarded-for
 
 management:
   endpoints:
