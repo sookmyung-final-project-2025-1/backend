@@ -85,6 +85,37 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     List<Object[]> getDailyTransactionStats(@Param("startDate") LocalDateTime startDate,
                                             @Param("endDate") LocalDateTime endDate);
 
+    // 주별 거래 통계
+    @Query(value = "SELECT " +
+            "DATE_TRUNC('week', virtual_time) as week, " +
+            "COUNT(*) as count, " +
+            "SUM(CASE WHEN is_fraud = true THEN 1 ELSE 0 END) as fraudCount, " +
+            "AVG(amount) as avgAmount, " +
+            "SUM(amount) as totalAmount " +
+            "FROM transactions " +
+            "WHERE virtual_time >= :startDate AND virtual_time <= :endDate " +
+            "GROUP BY DATE_TRUNC('week', virtual_time) " +
+            "ORDER BY DATE_TRUNC('week', virtual_time)",
+            nativeQuery = true)
+    List<Object[]> getWeeklyTransactionStats(@Param("startDate") LocalDateTime startDate,
+                                            @Param("endDate") LocalDateTime endDate);
+
+    // 월별 거래 통계
+    @Query(value = "SELECT " +
+            "DATE_TRUNC('month', virtual_time) as month, " +
+            "COUNT(*) as count, " +
+            "SUM(CASE WHEN is_fraud = true THEN 1 ELSE 0 END) as fraudCount, " +
+            "AVG(amount) as avgAmount, " +
+            "SUM(amount) as totalAmount, " +
+            "COUNT(DISTINCT user_id) as uniqueUsers " +
+            "FROM transactions " +
+            "WHERE virtual_time >= :startDate AND virtual_time <= :endDate " +
+            "GROUP BY DATE_TRUNC('month', virtual_time) " +
+            "ORDER BY DATE_TRUNC('month', virtual_time)",
+            nativeQuery = true)
+    List<Object[]> getMonthlyTransactionStats(@Param("startDate") LocalDateTime startDate,
+                                             @Param("endDate") LocalDateTime endDate);
+
     // 사기 거래 금액 합계
     @Query("SELECT SUM(t.amount) FROM Transaction t WHERE t.virtualTime >= :startTime AND t.virtualTime < :endTime AND t.isFraud = true")
     Double sumFraudTransactionAmounts(@Param("startTime") LocalDateTime startTime,
@@ -207,4 +238,16 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     // 상태별 거래 삭제
     @Modifying
     Long deleteByStatus(Transaction.TransactionStatus status);
+
+    // 실시간 스트리밍용 메서드들 (virtualTime 기준)
+    List<Transaction> findTop50ByOrderByVirtualTimeDesc();
+
+
+    // 데모용: 가장 오래된 거래 시간 조회
+    @Query("SELECT MIN(t.virtualTime) FROM Transaction t")
+    LocalDateTime findEarliestTransactionTime();
+
+    // 데모용: 가장 최신 거래 시간 조회
+    @Query("SELECT MAX(t.virtualTime) FROM Transaction t")
+    LocalDateTime findLatestTransactionTime();
 }

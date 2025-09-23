@@ -2,7 +2,7 @@ package com.credit.card.fraud.detection.transactions.service;
 
 import com.credit.card.fraud.detection.transactions.dto.StreamingConfig;
 import com.credit.card.fraud.detection.transactions.entity.Transaction;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.credit.card.fraud.detection.transactions.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,8 +10,6 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -22,7 +20,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +27,7 @@ import java.util.stream.IntStream;
 public class TransactionStreamingService {
 
     private final TransactionService transactionService;
+    private final TransactionRepository transactionRepository;
 
     @Autowired(required = false)
     private SimpMessagingTemplate messagingTemplate;
@@ -44,8 +42,14 @@ public class TransactionStreamingService {
     private static final LocalDateTime DATA_END_TIME = LocalDateTime.of(2019, 12, 31, 23, 59);
 
     public void startRealTimeStreaming() {
+        // 데모 모드: 가장 오래된 거래 시간부터 시작
+        LocalDateTime earliestTime = transactionRepository.findEarliestTransactionTime();
+        LocalDateTime latestTime = transactionRepository.findLatestTransactionTime();
+
         startStreaming(StreamingConfig.builder()
                 .mode(StreamingConfig.StreamingMode.REALTIME)
+                .startTime(earliestTime != null ? earliestTime : DEFAULT_START_TIME)
+                .endTime(latestTime != null ? latestTime : DATA_END_TIME)
                 .speedMultiplier(1.0)
                 .build());
     }
@@ -82,59 +86,29 @@ public class TransactionStreamingService {
         }
 
         LocalDateTime nextTime = config.getNextVirtualTime(virtualTime);
-        List<Transaction> transactions = generateTransactions(virtualTime, nextTime);
-
-        // 병렬 처리로 성능 개선
-        transactions.parallelStream().forEach(this::processTransaction);
+        List<Transaction> transactions = getActualTransactions(virtualTime, nextTime);
 
         currentVirtualTime.set(nextTime);
         broadcastRealtimeData(transactions);
     }
 
-    private List<Transaction> generateTransactions(LocalDateTime startTime, LocalDateTime endTime) {
-        int count = getTransactionCount(startTime.getHour());
-        Random random = new Random();
-
-        return IntStream.range(0, count)
-                .mapToObj(i -> createTransaction(startTime.plusMinutes(random.nextInt(60)), random))
-                .collect(Collectors.toList());
-    }
-
-    private Transaction createTransaction(LocalDateTime time, Random random) {
-        return Transaction.builder()
-                .userId("USER_" + (10000 + random.nextInt(90000)))
-                .amount(BigDecimal.valueOf(Math.exp(random.nextGaussian() * 1.5 + 3.0)).setScale(2, RoundingMode.HALF_UP))
-                .merchant("MERCHANT_" + random.nextInt(1000))
-                .merchantCategory(getRandomCategory())
-                .transactionTime(time)
-                .virtualTime(time)
-                .externalTransactionId(UUID.randomUUID().toString())
-                .anonymizedFeatures(generateMinimalIEEEFeatures(random))
-                .build();
-    }
-
-    private String generateMinimalIEEEFeatures(Random random) {
-        Map<String, Object> features = Map.of(
-                "TransactionDT", System.currentTimeMillis() / 1000,
-                "ProductCD", getRandomProductCode(),
-                "card1", String.valueOf(10000 + random.nextInt(90000)),
-                "addr1", random.nextDouble() * 1000,
-                "C1", random.nextDouble() * 100,
-                "V1", random.nextDouble() * 10
-        );
-
+    private List<Transaction> getActualTransactions(LocalDateTime startTime, LocalDateTime endTime) {
         try {
-            return new ObjectMapper().writeValueAsString(features);
-        } catch (Exception e) {
-            return "{}";
-        }
-    }
+            StreamingConfig config = currentConfig.get();
 
-    private void processTransaction(Transaction transaction) {
-        try {
-            transactionService.processAndDetectFraud(transaction);
+            if (config.getMode() == StreamingConfig.StreamingMode.REALTIME) {
+                // 실시간 데모 모드: 현재 virtual time부터 다음 virtual time까지의 거래 조회
+                LocalDateTime currentVirtual = currentVirtualTime.get();
+                LocalDateTime nextVirtual = config.getNextVirtualTime(currentVirtual);
+
+                return transactionRepository.findByVirtualTimeBetweenOrderByVirtualTime(currentVirtual, nextVirtual);
+            } else {
+                // 타임머신 모드: 지정된 시간 범위의 거래 데이터 조회
+                return transactionRepository.findByVirtualTimeBetweenOrderByVirtualTime(startTime, endTime);
+            }
         } catch (Exception e) {
-            log.error("Transaction processing failed: {}", e.getMessage());
+            log.error("Failed to fetch actual transactions: {}", e.getMessage());
+            return List.of(); // 빈 리스트 반환
         }
     }
 
@@ -165,28 +139,6 @@ public class TransactionStreamingService {
         );
     }
 
-    // 간단한 유틸리티 메서드들
-    private int getTransactionCount(int hour) {
-        return switch (hour) {
-            case 0, 1, 2, 3, 4, 5 -> 50;
-            case 6, 7, 8 -> 200;
-            case 9, 10, 11 -> 300;
-            case 12, 13 -> 400;
-            case 14, 15, 16, 17 -> 350;
-            case 18, 19, 20, 21 -> 450;
-            default -> 150;
-        };
-    }
-
-    private String getRandomCategory() {
-        String[] categories = {"GROCERY", "RESTAURANT", "ONLINE", "GAS", "RETAIL"};
-        return categories[new Random().nextInt(categories.length)];
-    }
-
-    private String getRandomProductCode() {
-        String[] codes = {"W", "C", "H", "S", "R"};
-        return codes[new Random().nextInt(codes.length)];
-    }
 
     public void pauseStreaming() {
         StreamingConfig config = currentConfig.get();

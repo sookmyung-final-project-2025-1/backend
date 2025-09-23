@@ -180,6 +180,59 @@ public class DashboardService {
         }
     }
 
+    public List<Map<String, Object>> getWeeklyTransactionStats(LocalDateTime startTime, LocalDateTime endTime) {
+        try {
+            List<Object[]> weeklyStats = transactionRepository.getWeeklyTransactionStats(startTime, endTime);
+
+            return weeklyStats.stream()
+                    .map(row -> {
+                        Map<String, Object> stat = new HashMap<>();
+                        stat.put("week", row[0]);
+                        stat.put("totalCount", row[1]);
+                        stat.put("fraudCount", row[2]);
+                        stat.put("avgAmount", row[3]);
+                        stat.put("totalAmount", row[4]);
+
+                        Long total = ((Number) row[1]).longValue();
+                        Long fraud = ((Number) row[2]).longValue();
+                        Double fraudRate = total > 0 ? (fraud.doubleValue() / total.doubleValue()) * 100 : 0.0;
+                        stat.put("fraudRate", fraudRate);
+
+                        return stat;
+                    })
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
+    public List<Map<String, Object>> getMonthlyTransactionStats(LocalDateTime startTime, LocalDateTime endTime) {
+        try {
+            List<Object[]> monthlyStats = transactionRepository.getMonthlyTransactionStats(startTime, endTime);
+
+            return monthlyStats.stream()
+                    .map(row -> {
+                        Map<String, Object> stat = new HashMap<>();
+                        stat.put("month", row[0]);
+                        stat.put("totalCount", row[1]);
+                        stat.put("fraudCount", row[2]);
+                        stat.put("avgAmount", row[3]);
+                        stat.put("totalAmount", row[4]);
+                        stat.put("uniqueUsers", row[5]);
+
+                        Long total = ((Number) row[1]).longValue();
+                        Long fraud = ((Number) row[2]).longValue();
+                        Double fraudRate = total > 0 ? (fraud.doubleValue() / total.doubleValue()) * 100 : 0.0;
+                        stat.put("fraudRate", fraudRate);
+
+                        return stat;
+                    })
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
     public Map<String, Object> getRealTimeMetrics() {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime oneHourAgo = now.minusHours(1);

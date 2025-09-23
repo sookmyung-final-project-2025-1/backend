@@ -93,6 +93,46 @@ public class DashboardController {
         return ResponseEntity.ok(stats);
     }
 
+    @GetMapping("/stats/weekly")
+    @Operation(summary = "주별 통계 조회", description = "주별 거래 및 사기 통계를 조회합니다")
+    @ApiResponse(responseCode = "200", description = "주별 통계 조회 성공",
+        content = @Content(mediaType = "application/json",
+            examples = @ExampleObject(value = "[{\"week\": \"2023-09-11T00:00:00\", \"transactionCount\": 42347, \"fraudCount\": 287, \"avgAmount\": 165.43, \"totalAmount\": 7002456.78}]")))
+    public ResponseEntity<List<Map<String, Object>>> getWeeklyStats(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+
+        if (startTime == null) {
+            startTime = LocalDateTime.now().minusDays(90); // 3개월
+        }
+        if (endTime == null) {
+            endTime = LocalDateTime.now();
+        }
+
+        List<Map<String, Object>> stats = dashboardService.getWeeklyTransactionStats(startTime, endTime);
+        return ResponseEntity.ok(stats);
+    }
+
+    @GetMapping("/stats/monthly")
+    @Operation(summary = "월별 통계 조회", description = "월별 거래 및 사기 통계를 조회합니다")
+    @ApiResponse(responseCode = "200", description = "월별 통계 조회 성공",
+        content = @Content(mediaType = "application/json",
+            examples = @ExampleObject(value = "[{\"month\": \"2023-09-01T00:00:00\", \"transactionCount\": 186452, \"fraudCount\": 1247, \"avgAmount\": 172.89, \"totalAmount\": 32234567.89, \"uniqueUsers\": 45678}]")))
+    public ResponseEntity<List<Map<String, Object>>> getMonthlyStats(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+
+        if (startTime == null) {
+            startTime = LocalDateTime.now().minusYears(1); // 1년
+        }
+        if (endTime == null) {
+            endTime = LocalDateTime.now();
+        }
+
+        List<Map<String, Object>> stats = dashboardService.getMonthlyTransactionStats(startTime, endTime);
+        return ResponseEntity.ok(stats);
+    }
+
     @GetMapping("/realtime")
     @Operation(summary = "실시간 메트릭 조회", description = "실시간 대시보드 메트릭과 최근 활동을 조회합니다")
     @ApiResponse(responseCode = "200", description = "실시간 메트릭 조회 성공",
