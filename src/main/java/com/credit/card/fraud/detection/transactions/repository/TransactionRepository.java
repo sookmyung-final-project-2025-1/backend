@@ -87,22 +87,22 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     // 주별 거래 통계
     @Query(value = "SELECT " +
-            "DATE_TRUNC('week', virtual_time) as week, " +
+            "DATE_SUB(DATE(virtual_time), INTERVAL WEEKDAY(virtual_time) DAY) as week, " +
             "COUNT(*) as count, " +
             "SUM(CASE WHEN is_fraud = true THEN 1 ELSE 0 END) as fraudCount, " +
             "AVG(amount) as avgAmount, " +
             "SUM(amount) as totalAmount " +
             "FROM transactions " +
             "WHERE virtual_time >= :startDate AND virtual_time <= :endDate " +
-            "GROUP BY DATE_TRUNC('week', virtual_time) " +
-            "ORDER BY DATE_TRUNC('week', virtual_time)",
+            "GROUP BY DATE_SUB(DATE(virtual_time), INTERVAL WEEKDAY(virtual_time) DAY) " +
+            "ORDER BY DATE_SUB(DATE(virtual_time), INTERVAL WEEKDAY(virtual_time) DAY)",
             nativeQuery = true)
     List<Object[]> getWeeklyTransactionStats(@Param("startDate") LocalDateTime startDate,
                                             @Param("endDate") LocalDateTime endDate);
 
     // 월별 거래 통계
     @Query(value = "SELECT " +
-            "DATE_TRUNC('month', virtual_time) as month, " +
+            "DATE_FORMAT(virtual_time, '%Y-%m-01') as month, " +
             "COUNT(*) as count, " +
             "SUM(CASE WHEN is_fraud = true THEN 1 ELSE 0 END) as fraudCount, " +
             "AVG(amount) as avgAmount, " +
@@ -110,8 +110,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
             "COUNT(DISTINCT user_id) as uniqueUsers " +
             "FROM transactions " +
             "WHERE virtual_time >= :startDate AND virtual_time <= :endDate " +
-            "GROUP BY DATE_TRUNC('month', virtual_time) " +
-            "ORDER BY DATE_TRUNC('month', virtual_time)",
+            "GROUP BY DATE_FORMAT(virtual_time, '%Y-%m-01') " +
+            "ORDER BY DATE_FORMAT(virtual_time, '%Y-%m-01')",
             nativeQuery = true)
     List<Object[]> getMonthlyTransactionStats(@Param("startDate") LocalDateTime startDate,
                                              @Param("endDate") LocalDateTime endDate);
