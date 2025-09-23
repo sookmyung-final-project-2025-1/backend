@@ -42,14 +42,14 @@ public class TransactionStreamingService {
     private static final LocalDateTime DATA_END_TIME = LocalDateTime.of(2019, 12, 31, 23, 59);
 
     public void startRealTimeStreaming() {
-        // 데모 모드: 가장 오래된 거래 시간부터 시작
-        LocalDateTime earliestTime = transactionRepository.findEarliestTransactionTime();
+        // 현재 시각을 가상 시간의 시작점으로 설정
+        LocalDateTime now = LocalDateTime.now();
         LocalDateTime latestTime = transactionRepository.findLatestTransactionTime();
 
         startStreaming(StreamingConfig.builder()
                 .mode(StreamingConfig.StreamingMode.REALTIME)
-                .startTime(earliestTime != null ? earliestTime : DEFAULT_START_TIME)
-                .endTime(latestTime != null ? latestTime : DATA_END_TIME)
+                .startTime(now)
+                .endTime(latestTime != null ? latestTime.plusYears(10) : now.plusYears(10)) // 충분히 미래 시점으로 설정
                 .speedMultiplier(1.0)
                 .build());
     }
@@ -97,11 +97,19 @@ public class TransactionStreamingService {
             StreamingConfig config = currentConfig.get();
 
             if (config.getMode() == StreamingConfig.StreamingMode.REALTIME) {
-                // 실시간 데모 모드: 현재 virtual time부터 다음 virtual time까지의 거래 조회
+                // 실시간 데모 모드: 과거 데이터를 현재 시각 기준으로 매핑
                 LocalDateTime currentVirtual = currentVirtualTime.get();
                 LocalDateTime nextVirtual = config.getNextVirtualTime(currentVirtual);
 
-                return transactionRepository.findByVirtualTimeBetweenOrderByVirtualTime(currentVirtual, nextVirtual);
+                // 현재 가상 시간에서 실제 시작 시각을 뺀 경과 시간 계산
+                long elapsedSeconds = java.time.Duration.between(config.getStartTime(), currentVirtual).getSeconds();
+                long intervalSeconds = java.time.Duration.between(currentVirtual, nextVirtual).getSeconds();
+
+                // 과거 데이터의 시작점에서 경과 시간만큼 더한 시점의 데이터 조회
+                LocalDateTime pastDataStart = DEFAULT_START_TIME.plusSeconds(elapsedSeconds);
+                LocalDateTime pastDataEnd = pastDataStart.plusSeconds(intervalSeconds);
+
+                return transactionRepository.findByVirtualTimeBetweenOrderByVirtualTime(pastDataStart, pastDataEnd);
             } else {
                 // 타임머신 모드: 지정된 시간 범위의 거래 데이터 조회
                 return transactionRepository.findByVirtualTimeBetweenOrderByVirtualTime(startTime, endTime);
