@@ -27,7 +27,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*")
                 .withSockJS()
-                .setHeartbeatTime(25000);
+                .setHeartbeatTime(25000)
+                .setStreamBytesLimit(256 * 1024)  // 256KB 제한
+                .setHttpMessageCacheSize(100);    // 캐시 크기 제한
 
         registry.addEndpoint("/ws-native")
                 .setAllowedOriginPatterns("*");

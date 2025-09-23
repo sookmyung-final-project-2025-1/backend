@@ -102,15 +102,15 @@ server:
   forward-headers-strategy: framework
   use-forward-headers: true
   tomcat:
-    connection-timeout: 900000  # 15분으로 추가 연장
-    keep-alive-timeout: 300000  # Keep-Alive 타임아웃 5분으로 증가
-    max-keep-alive-requests: 1000 # Keep-Alive 요청 수 증가
-    max-connections: 10000      # 최대 연결 수 증가
+    connection-timeout: 30000   # 30초로 단축
+    keep-alive-timeout: 60000   # 1분으로 단축
+    max-keep-alive-requests: 100 # Keep-Alive 요청 수 제한
+    max-connections: 5000       # 최대 연결 수 제한
     max-http-post-size: 2GB
     threads:
-      max: 300                  # 최대 스레드 수 증가
-      min-spare: 50             # 최소 대기 스레드 증가
-    accept-count: 200           # 대기큐 크기 증가
+      max: 200                  # 최대 스레드 수 제한
+      min-spare: 20             # 최소 대기 스레드 감소
+    accept-count: 100           # 대기큐 크기 제한
     max-swallow-size: 2MB       # 삼킬 수 있는 최대 요청 크기
     remoteip:
       protocol-header: x-forwarded-proto
